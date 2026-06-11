@@ -60,7 +60,11 @@ Language can follow the browser or be set to English or Simplified Chinese. Deep
 | DeepSeek MCP tools | Lets you manage MCP services, tool permissions, and execution status in the side panel, then sends tool results back into the same conversation. |
 | DeepSeek memory | Automatically saves, filters, and injects long-term memory so different conversations can reuse user preferences, project context, and common facts. |
 | DeepSeek Skills / `/skill` workflows | Switches quickly between built-in, custom, and GitHub-imported Skills for expert modes and task templates. |
-| DeepSeek conversation export | Exports the current DeepSeek conversation from the reply action row with selectable HTML, Markdown, and PDF formats, including attachment references and metadata. |
+| DeepSeek project context | Organizes project materials, pages, local files, or repository content as reusable context that can be attached when needed. |
+| DeepSeek artifact downloads | Creates downloadable single files or project bundles for scripts, Markdown, JSON, HTML, and small project structures. |
+| DeepSeek conversation export | Exports the current DeepSeek conversation from the reply action row with selectable HTML, Markdown, PDF, and image-manifest outputs, including attachment references and metadata. |
+| DeepSeek saved snippets | Saves snippets, bookmarks, and reusable prompts that can be searched, inserted into chat, and exported as Markdown or JSON. |
+| DeepSeek prompt controls | Controls memory, system prompt, preset cadence, and response language for different tasks. |
 | DeepSeek automation | Runs fixed tasks in dedicated DeepSeek conversations with manual start, scheduled triggers, status tracking, and manual stop. |
 | DeepSeek web search / web fetch | Searches the web or reads specified pages when current information or source material is needed, then continues to the final answer. |
 
@@ -91,6 +95,15 @@ Language can follow the browser or be set to English or Simplified Chinese. Deep
 - **Matching model behavior** - Built-in Skills, tool-call guidance, web-search prompts, and long-task continuation prompts use the current language.
 - **User content stays unchanged** - User-created memories, presets, custom Skills, automation prompts, MCP settings, and sync data are not translated or rewritten when the language changes.
 
+### Project Context and Downloadable Artifacts
+
+- **Project library** - Maintain project context in the side panel by grouping repository, web-page, local-file, and manual notes under one project.
+- **Attach when useful** - Bring only task-relevant project material into a conversation instead of pasting the same background repeatedly.
+- **File and source management** - Review, enable, disable, or replace project material when switching between tasks.
+- **Single-file artifacts** - Ask DeepSeek++ to create downloadable scripts, Markdown, JSON, HTML, or other text files.
+- **Project bundles** - Download multi-file results as a bundle for prototypes, small tools, or documentation sets.
+- **Local-first flow** - Project material and generated artifacts are added, generated, and downloaded by the user without a DeepSeek++ backend.
+
 ### Native-Feeling Tool Calls
 
 - **Automatic detection and execution** - When the model asks to call a tool, the extension detects and runs it without requiring manual copying.
@@ -110,7 +123,18 @@ Language can follow the browser or be set to English or Simplified Chinese. Deep
 - **Selectable formats** - HTML is selected by default, with Markdown and PDF files available when needed.
 - **Readable mode** - Extension-internal prompt and tool-call markup are hidden by default so exports are easier to read and search.
 - **Attachment manifest** - Includes file references, names, sizes, statuses, and message links. File body export stays disabled until the download path is verified.
+- **Image manifest** - Export a separate image attachment manifest for conversations that include screenshots, charts, or image files.
+- **Single-message export** - Save an individual page message as Markdown when you only need one answer excerpt.
 - **Local saves** - Export files are saved through the browser's local download flow. DeepSeek++ does not operate a backend for collecting export data.
+
+### Saved Items and Conversation Organization
+
+- **Saved snippets and bookmarks** - Save reusable prompts, answer fragments, web leads, or reference notes in the side panel.
+- **Fast insertion** - Insert a saved item into side-panel chat when reusing a fixed instruction or workflow.
+- **Search and tags** - Search saved items by text or tags; tag DeepSeek history items and filter by title or tag.
+- **Bulk export** - Export saved items as Markdown or JSON for migration, backup, or review.
+- **Code block downloads** - Save code blocks from the DeepSeek page as local files with the matching file type.
+- **What's new panel** - Settings can show a local version summary that users can dismiss.
 
 ### Built-In Web Tools
 
@@ -133,6 +157,16 @@ Language can follow the browser or be set to English or Simplified Chinese. Deep
 <p align="center">
   <img src="assets/screenshot-inline-tools.svg" width="720" alt="Tool continuation and speed display">
 </p>
+
+### Interactive Tools and Prompt Controls
+
+- **Sandbox approvals** - Code execution that needs explicit permission shows a confirmation card before it continues.
+- **Skill drafts** - AI can help draft a Skill, but the user reviews, edits, and confirms it before saving.
+- **Memory import** - Import memory from another AI workflow with preview and per-item accept/reject controls.
+- **Saved-item reuse** - Snippets and bookmarks can be reused as prompt material across conversations.
+- **Voice input and read-aloud** - Use voice input and response read-aloud when the browser supports it; unsupported platforms show a clear status.
+- **Prompt switches** - Disable memory, system prompt, or preset injection per task, or force a response language.
+- **Developer playground** - In Developer mode, run one-off API tests while the API Key remains local and is never shown, synced, or exported.
 
 ### Floating Pet
 
@@ -366,7 +400,7 @@ Thanks to this release's contributors: [@todayzhou](https://github.com/todayzhou
 |------|--------------|
 | Automation tasks | Automation runs now save more reliable conversation links, parent messages, and history snapshots for future runs. |
 | Tool continuation | Automation tasks and manual agentic continuation now use a consistent tool execution and result-return cadence. |
-| History display | Conversation history and local cache consistently hide internal prompts and raw tool-call markers while retaining restorable execution records. |
+| History display | Conversation history and local cache consistently hide internal prompts and technical execution markers while retaining restorable execution records. |
 | Response feedback | Output speed display is consistent across streaming responses and compatible request paths, reducing stale speed state. |
 | Side-panel performance | Memory, Skill, preset, automation, MCP, and settings pages load on demand, making the side panel lighter on first open. |
 | Release safeguards | Adds release checks to keep tool behavior, continuation flow, and user-visible responses consistent before shipping. |
@@ -529,6 +563,16 @@ Shell MCP host smoke check:
 ```bash
 npm run smoke:shell
 ```
+
+### Android WebView Developer Baseline
+
+The repository includes an Android WebView baseline for validating DeepSeek++ mobile capability boundaries. The available local staging command is:
+
+```bash
+npm run build:android
+```
+
+This builds and stages the web assets. APK assembly and Android unit tests require a local JDK; without one, the Gradle entry points fail with an explicit install-and-retry message. Android intentionally disables browser-extension-only capabilities such as browser side panels, Native Messaging, Shell Host, context menus, and background alarms.
 
 | Browser | Load entry | Build directory |
 |---------|------------|-----------------|

@@ -38,3 +38,5 @@ docs/archives/*
 !docs/archives/README.md
 !docs/archives/deepseek-official-conversation-export/
 !docs/archives/deepseek-official-conversation-export/**
+!docs/archives/better-deepseek-capability-adoption/
+!docs/archives/better-deepseek-capability-adoption/**

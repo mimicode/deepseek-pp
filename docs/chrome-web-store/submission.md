@@ -1,6 +1,6 @@
 # Chrome Web Store Submission Runbook
 
-Last updated: 2026-06-10
+Last updated: 2026-06-11
 
 This runbook covers the parts that can be prepared from the repository and the parts that must be confirmed in the Chrome Web Store Developer Dashboard.
 
@@ -14,7 +14,7 @@ Official references:
 
 ## Current Status
 
-- Chrome MV3 package exists at `dist/deepseek-plus-plus-0.6.4-chrome.zip`.
+- Chrome MV3 package exists at `dist/deepseek-plus-plus-0.6.5-chrome.zip`.
 - Package root contains `manifest.json`.
 - Package size is below the Chrome Web Store package limit.
 - Required icon exists at `public/icon/128.png`.
@@ -47,7 +47,7 @@ npm run zip:chrome
 Upload:
 
 ```text
-dist/deepseek-plus-plus-0.6.4-chrome.zip
+dist/deepseek-plus-plus-0.6.5-chrome.zip
 ```
 
 ## Store Listing Fields
@@ -72,7 +72,7 @@ Productivity
 ### Single Purpose
 
 ```text
-Enhance the DeepSeek web chat experience with English and Simplified Chinese UI, user-controlled memory, Skills, prompt presets, MCP tool execution, local conversation export, and scheduled automation inside chat.deepseek.com.
+Enhance the DeepSeek web chat experience with English and Simplified Chinese UI, user-controlled memory, Skills, project context, saved snippets, prompt presets, MCP tool execution, local exports, downloadable artifacts, and scheduled automation inside chat.deepseek.com.
 ```
 
 ### Data Type Disclosures
@@ -98,7 +98,7 @@ Use these in the dashboard permission fields.
 #### `storage`
 
 ```text
-Stores extension data locally, including memories, custom skills, prompt presets, settings, automation tasks, MCP server configuration, and tool execution history. User-started conversation export artifacts are generated locally and saved through the browser download flow.
+Stores extension data locally, including memories, custom skills, projects, saved items, prompt presets, settings, automation tasks, MCP server configuration, and tool execution history. User-started exports and generated artifacts are created locally and saved through the browser download flow.
 ```
 
 #### `alarms`
@@ -128,7 +128,7 @@ Provides the extension's management UI in Chrome's side panel for memories, skil
 #### Host permission: `*://chat.deepseek.com/*`
 
 ```text
-Runs the extension on the DeepSeek web app so it can inject user-selected context, detect tool-call markup, render tool results, export user-requested conversation history, and support automation inside DeepSeek conversations.
+Runs the extension on the DeepSeek web app so it can apply user-selected context, render tool results, export user-requested conversation history, support local downloads, and support automation inside DeepSeek conversations.
 ```
 
 #### Host permission: `https://api.deepseek.com/*`
@@ -165,7 +165,8 @@ Use this reviewer note:
 5. Create a memory or Skill in the side panel.
 6. Send a DeepSeek message that uses the saved memory/Skill. The extension should use the selected language for extension UI while preserving the user-authored memory/Skill text.
 7. In a DeepSeek conversation, use the DeepSeek++ export button next to the official reply actions such as copy and share. The extension should show format choices, default to HTML, and save the selected current-conversation export formats locally.
-8. Optional MCP/WebDAV/native messaging features require user-provided endpoints or a user-installed local Shell host and are disabled until configured by the user.
+8. In the side panel, create a saved snippet and insert it into chat, then export saved items as Markdown or JSON.
+9. Optional MCP/WebDAV/native messaging features require user-provided endpoints or a user-installed local Shell host and are disabled until configured by the user.
 ```
 
 No test account is included because the extension works with the reviewer's own DeepSeek session.

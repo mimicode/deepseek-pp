@@ -67,3 +67,13 @@
 - GitHub repository: `zhu1090093659/deepseek-pp`
 - GitHub milestones: #26-#30
 - GitHub issues: #134-#149
+
+### better-deepseek-capability-adoption
+
+- Description: Better DeepSeek capability adoption for DeepSeek++, covering project context, artifact delivery, Android WebView baseline, interactive agent tools, saved items, prompt controls, history organization, API playground, product polish, validation, and public docs.
+- Date range: 2026-06-11 - 2026-06-11
+- Tracking mode: GITHUB_STANDARD
+- Archived progress: [MASTER.md](better-deepseek-capability-adoption/progress/MASTER.md)
+- GitHub repository: `zhu1090093659/deepseek-pp`
+- GitHub milestones: #31-#36
+- GitHub issues: #152-#181
