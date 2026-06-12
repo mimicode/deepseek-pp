@@ -24,6 +24,7 @@ export {
 export {
   ARTIFACT_TOOL_NAMES,
   ARTIFACT_TOOL_PROVIDER,
+  createRestoredArtifactToolResult,
   createArtifactToolDescriptors,
   executeArtifactToolCall,
   isArtifactToolName,

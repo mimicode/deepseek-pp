@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createArtifactToolDescriptors,
+  createRestoredArtifactToolResult,
   executeArtifactToolCall,
   getArtifact,
 } from '../core/artifact';
@@ -72,6 +73,25 @@ describe('artifact tool provider', () => {
       filename: 'calc.py',
       mimeType: 'text/x-python',
       view: { previewMode: 'code', language: 'python' },
+    });
+  });
+
+  it('reconstructs historical HTML artifact tool calls as transient previewable outputs', () => {
+    const result = createRestoredArtifactToolResult(toolCall('artifact_create', {
+      filename: 'demo.html',
+      content: '<!doctype html><h1>Restored</h1>',
+    }), 'en');
+
+    expect(result?.ok).toBe(true);
+    expect(result?.summary).toBe('File ready');
+    expect(result?.detail).toBe('demo.html (32 bytes)');
+    expect(result?.output).toMatchObject({
+      kind: 'artifact',
+      artifactKind: 'file',
+      filename: 'demo.html',
+      mimeType: 'text/html',
+      view: { previewMode: 'html', language: 'html' },
+      transientContent: '<!doctype html><h1>Restored</h1>',
     });
   });
 

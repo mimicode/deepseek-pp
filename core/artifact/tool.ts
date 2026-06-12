@@ -109,60 +109,174 @@ export async function executeArtifactToolCall(
   };
 }
 
+export function createRestoredArtifactToolResult(
+  call: ToolCall,
+  locale: SupportedLocale = DEFAULT_LOCALE,
+): ToolResult | null {
+  if (!isArtifactToolName(call.name)) return null;
+
+  try {
+    if (call.name === 'artifact_create') {
+      const artifact = normalizeSingleFileArtifact(call.payload);
+      const output: ArtifactOutput = {
+        kind: 'artifact',
+        artifactId: createTransientArtifactId(artifact.filename, artifact.content),
+        artifactKind: 'file',
+        filename: artifact.filename,
+        mimeType: artifact.mimeType,
+        sizeBytes: artifact.sizeBytes,
+        view: artifact.view,
+        transientContent: artifact.content,
+      };
+      return {
+        ok: true,
+        name: call.name,
+        provider: call.provider ?? ARTIFACT_TOOL_PROVIDER,
+        summary: translate(locale, 'tool.artifact.fileReady'),
+        detail: `${artifact.filename} (${artifact.sizeBytes} bytes)`,
+        output: output as unknown as JsonValue,
+      };
+    }
+
+    const artifact = normalizeBundleArtifact(call.payload);
+    const output: ArtifactOutput = {
+      kind: 'artifact',
+      artifactId: createTransientArtifactId(artifact.filename, artifact.content),
+      artifactKind: 'bundle',
+      filename: artifact.filename,
+      mimeType: 'application/zip',
+      sizeBytes: artifact.sizeBytes,
+      fileCount: artifact.fileCount,
+      transientContent: artifact.content,
+    };
+    return {
+      ok: true,
+      name: call.name,
+      provider: call.provider ?? ARTIFACT_TOOL_PROVIDER,
+      summary: translate(locale, 'tool.artifact.bundleReady'),
+      detail: `${artifact.filename} (${artifact.fileCount} files, ${artifact.sizeBytes} bytes)`,
+      output: output as unknown as JsonValue,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      name: call.name,
+      provider: call.provider ?? ARTIFACT_TOOL_PROVIDER,
+      summary: translate(locale, 'tool.artifact.failed'),
+      detail: error instanceof Error ? error.message : String(error),
+      error: {
+        code: 'artifact_restore_failed',
+        message: error instanceof Error ? error.message : String(error),
+        retryable: false,
+      },
+    };
+  }
+}
+
 async function createSingleFile(call: ToolCall, locale: SupportedLocale): Promise<ToolResult> {
-  const filename = safeFilename(call.payload.filename, 'artifact.txt');
-  const content = requiredString(call.payload.content, 'content');
-  const mimeType = optionalString(call.payload.mimeType) || inferMimeType(filename);
-  const view = normalizeArtifactView(call.payload, filename, mimeType);
-  const record = await saveArtifact({ kind: 'file', filename, mimeType, content, view });
+  const artifact = normalizeSingleFileArtifact(call.payload);
+  const record = await saveArtifact({
+    kind: 'file',
+    filename: artifact.filename,
+    mimeType: artifact.mimeType,
+    content: artifact.content,
+    view: artifact.view,
+  });
   const output: ArtifactOutput = {
     kind: 'artifact',
     artifactId: record.id,
     artifactKind: 'file',
-    filename,
-    mimeType,
+    filename: artifact.filename,
+    mimeType: artifact.mimeType,
     sizeBytes: record.sizeBytes,
-    view,
+    view: artifact.view,
   };
   return {
     ok: true,
     name: call.name,
     provider: call.provider ?? ARTIFACT_TOOL_PROVIDER,
     summary: translate(locale, 'tool.artifact.fileReady'),
-    detail: `${filename} (${record.sizeBytes} bytes)`,
+    detail: `${artifact.filename} (${record.sizeBytes} bytes)`,
     output: output as unknown as JsonValue,
   };
 }
 
 async function createBundle(call: ToolCall, locale: SupportedLocale): Promise<ToolResult> {
-  const filename = ensureZipFilename(safeFilename(call.payload.filename, 'project.zip'));
-  const files = normalizeArtifactFiles(call.payload.files);
-  const zipBytes = createStoredZip(files);
-  const content = bytesToBase64(zipBytes);
+  const artifact = normalizeBundleArtifact(call.payload);
   const record = await saveArtifact({
     kind: 'bundle',
-    filename,
+    filename: artifact.filename,
     mimeType: 'application/zip',
-    content,
-    files,
+    content: artifact.content,
+    files: artifact.files,
   });
   const output: ArtifactOutput = {
     kind: 'artifact',
     artifactId: record.id,
     artifactKind: 'bundle',
-    filename,
+    filename: artifact.filename,
     mimeType: 'application/zip',
-    sizeBytes: zipBytes.length,
-    fileCount: files.length,
+    sizeBytes: artifact.sizeBytes,
+    fileCount: artifact.fileCount,
   };
   return {
     ok: true,
     name: call.name,
     provider: call.provider ?? ARTIFACT_TOOL_PROVIDER,
     summary: translate(locale, 'tool.artifact.bundleReady'),
-    detail: `${filename} (${files.length} files, ${zipBytes.length} bytes)`,
+    detail: `${artifact.filename} (${artifact.fileCount} files, ${artifact.sizeBytes} bytes)`,
     output: output as unknown as JsonValue,
   };
+}
+
+function normalizeSingleFileArtifact(payload: Record<string, unknown>): {
+  filename: string;
+  content: string;
+  mimeType: string;
+  sizeBytes: number;
+  view: ArtifactView;
+} {
+  const filename = safeFilename(payload.filename, 'artifact.txt');
+  const content = requiredString(payload.content, 'content');
+  const mimeType = optionalString(payload.mimeType) || inferMimeType(filename);
+  return {
+    filename,
+    content,
+    mimeType,
+    sizeBytes: new TextEncoder().encode(content).length,
+    view: normalizeArtifactView(payload, filename, mimeType),
+  };
+}
+
+function normalizeBundleArtifact(payload: Record<string, unknown>): {
+  filename: string;
+  files: ArtifactFile[];
+  content: string;
+  sizeBytes: number;
+  fileCount: number;
+} {
+  const filename = ensureZipFilename(safeFilename(payload.filename, 'project.zip'));
+  const files = normalizeArtifactFiles(payload.files);
+  const zipBytes = createStoredZip(files);
+  return {
+    filename,
+    files,
+    content: bytesToBase64(zipBytes),
+    sizeBytes: zipBytes.length,
+    fileCount: files.length,
+  };
+}
+
+function createTransientArtifactId(filename: string, content: string): string {
+  return `transient:${hashString(`${filename}\n${content}`)}`;
+}
+
+function hashString(value: string): string {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash).toString(36);
 }
 
 function normalizeArtifactFiles(value: unknown): ArtifactFile[] {

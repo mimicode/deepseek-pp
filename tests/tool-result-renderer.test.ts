@@ -7,6 +7,7 @@ import type { ToolCardResult } from '../core/types';
 
 describe('tool result renderer registry', () => {
   afterEach(() => {
+    vi.useRealTimers();
     document.body.innerHTML = '';
   });
 
@@ -92,6 +93,88 @@ describe('tool result renderer registry', () => {
     expect(frame).not.toBeNull();
     expect(frame?.getAttribute('sandbox')).toBe('allow-scripts');
     expect(frame?.srcdoc).toContain('<h1>html-ok</h1>');
+  });
+
+  it('opens transient restored HTML artifacts without a background artifact lookup', async () => {
+    registerDefaultToolResultRenderers();
+    const target = document.createElement('div');
+    const result: ToolCardResult = {
+      ok: true,
+      summary: 'File ready',
+      output: {
+        kind: 'artifact',
+        artifactId: 'transient:demo',
+        artifactKind: 'file',
+        filename: 'demo.html',
+        mimeType: 'text/html',
+        sizeBytes: 46,
+        view: { previewMode: 'html', language: 'html' },
+        transientContent: '<!doctype html><html><body><h1>restored-ok</h1></body></html>',
+      },
+    };
+    const sendMessageMock = vi.fn();
+    const sendMessage = sendMessageMock as unknown as <T = unknown>(message: unknown) => Promise<T | undefined>;
+
+    const rendered = renderToolResultWithRegistry({
+      target,
+      result,
+      sendMessage,
+    });
+
+    expect(rendered).toBe(true);
+    target.querySelector<HTMLButtonElement>('.dpp-artifact-preview')?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const frame = document.body.querySelector<HTMLIFrameElement>('.dpp-artifact-preview-panel-frame');
+    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(frame?.srcdoc).toContain('<h1>restored-ok</h1>');
+  });
+
+  it('closes the artifact preview panel when the page route changes', async () => {
+    vi.useFakeTimers();
+    registerDefaultToolResultRenderers();
+    const target = document.createElement('div');
+    const result: ToolCardResult = {
+      ok: true,
+      summary: 'File ready',
+      output: {
+        kind: 'artifact',
+        artifactId: 'artifact-html',
+        artifactKind: 'file',
+        filename: 'demo.html',
+        mimeType: 'text/html',
+        sizeBytes: 64,
+        view: { previewMode: 'html', language: 'html' },
+      },
+    };
+    const sendMessageMock = vi.fn(async () => ({
+      ok: true,
+      artifact: {
+        filename: 'demo.html',
+        mimeType: 'text/html',
+        content: '<!doctype html><h1>html-ok</h1>',
+        kind: 'file',
+      },
+    }));
+    const sendMessage = sendMessageMock as unknown as <T = unknown>(message: unknown) => Promise<T | undefined>;
+
+    renderToolResultWithRegistry({
+      target,
+      result,
+      sendMessage,
+    });
+
+    target.querySelector<HTMLButtonElement>('.dpp-artifact-preview')?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(document.body.querySelector('.dpp-artifact-preview-panel')).not.toBeNull();
+
+    window.history.pushState({}, '', '/a/chat/s/another-session');
+    vi.advanceTimersByTime(250);
+
+    expect(document.body.querySelector('.dpp-artifact-preview-panel')).toBeNull();
+    expect(document.body.classList.contains('dpp-artifact-preview-panel-open')).toBe(false);
   });
 
   it('runs Python artifacts through the artifact code runner', async () => {

@@ -146,6 +146,18 @@ describe('project context sources and retrieval', () => {
     expect(formatted).toContain('--- docs/setup.md:1-2 ---');
   });
 
+  it('retrieves Chinese content for Chinese queries via CJK bigram tokens', () => {
+    const files: ProjectFile[] = [
+      projectFile('p1', 'docs/config.md', '配置说明：启用记忆功能后即可保存对话。'),
+      projectFile('p1', 'docs/other.md', 'Unrelated English documentation about widgets.'),
+    ];
+
+    const chunks = searchProjectFiles('如何启用记忆功能', files, 2);
+
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks[0].filePath).toBe('docs/config.md');
+  });
+
   it('stores active project files and returns retrieved prompt context', async () => {
     const project = await createProjectContext({
       name: 'Plugin',

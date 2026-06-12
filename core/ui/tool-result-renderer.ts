@@ -8,6 +8,8 @@ export type ToolResultRenderer = (input: {
 }) => boolean;
 
 const renderers: ToolResultRenderer[] = [];
+let artifactPreviewRoute: string | null = null;
+let artifactPreviewRouteTimer: number | null = null;
 
 export function registerToolResultRenderer(renderer: ToolResultRenderer): void {
   if (!renderers.includes(renderer)) renderers.push(renderer);
@@ -237,11 +239,14 @@ async function openArtifactPreviewPanel(
   panel.append(header, stage);
   document.body.appendChild(panel);
   document.body.classList.add('dpp-artifact-preview-panel-open');
+  startArtifactPreviewRouteWatcher(location.href);
 
   try {
     const record = await getArtifactRecord(artifact, sendMessage);
+    if (!panel.isConnected) return;
     frame.srcdoc = record.content;
   } catch (error) {
+    if (!panel.isConnected) return;
     frame.remove();
     const message = document.createElement('div');
     message.className = 'dpp-artifact-preview-error';
@@ -253,6 +258,31 @@ async function openArtifactPreviewPanel(
 function closeArtifactPreviewPanel(): void {
   document.querySelector('.dpp-artifact-preview-panel')?.remove();
   document.body.classList.remove('dpp-artifact-preview-panel-open');
+  stopArtifactPreviewRouteWatcher();
+}
+
+function startArtifactPreviewRouteWatcher(route: string): void {
+  artifactPreviewRoute = route;
+  window.addEventListener('popstate', closeArtifactPreviewPanelIfRouteChanged);
+  window.addEventListener('hashchange', closeArtifactPreviewPanelIfRouteChanged);
+
+  if (!artifactPreviewRouteTimer) {
+    artifactPreviewRouteTimer = window.setInterval(closeArtifactPreviewPanelIfRouteChanged, 250);
+  }
+}
+
+function stopArtifactPreviewRouteWatcher(): void {
+  artifactPreviewRoute = null;
+  window.removeEventListener('popstate', closeArtifactPreviewPanelIfRouteChanged);
+  window.removeEventListener('hashchange', closeArtifactPreviewPanelIfRouteChanged);
+  if (!artifactPreviewRouteTimer) return;
+  window.clearInterval(artifactPreviewRouteTimer);
+  artifactPreviewRouteTimer = null;
+}
+
+function closeArtifactPreviewPanelIfRouteChanged(): void {
+  if (!artifactPreviewRoute || location.href === artifactPreviewRoute) return;
+  closeArtifactPreviewPanel();
 }
 
 async function downloadArtifact(
@@ -264,18 +294,14 @@ async function downloadArtifact(
   const previous = button.textContent;
   button.textContent = 'Downloading...';
   try {
-    const record = await sendMessage<{ ok?: boolean; artifact?: { filename: string; mimeType: string; content: string; kind: string } }>({
-      type: 'GET_ARTIFACT',
-      payload: { id: artifact.artifactId },
-    });
-    if (!record?.artifact) throw new Error('Artifact not found');
-    const content = record.artifact.kind === 'bundle'
-      ? base64ToBlob(record.artifact.content, record.artifact.mimeType)
-      : new Blob([record.artifact.content], { type: record.artifact.mimeType });
+    const record = await getArtifactRecord(artifact, sendMessage);
+    const content = record.kind === 'bundle'
+      ? base64ToBlob(record.content, record.mimeType)
+      : new Blob([record.content], { type: record.mimeType });
     const url = URL.createObjectURL(content);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = record.artifact.filename;
+    anchor.download = record.filename;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -326,6 +352,15 @@ async function getArtifactRecord(
   artifact: ArtifactOutput,
   sendMessage: <T = unknown>(message: unknown) => Promise<T | undefined>,
 ): Promise<{ filename: string; mimeType: string; content: string; kind: string }> {
+  if (typeof artifact.transientContent === 'string') {
+    return {
+      filename: artifact.filename,
+      mimeType: artifact.mimeType,
+      content: artifact.transientContent,
+      kind: artifact.artifactKind,
+    };
+  }
+
   const record = await sendMessage<{ ok?: boolean; artifact?: { filename: string; mimeType: string; content: string; kind: string } }>({
     type: 'GET_ARTIFACT',
     payload: { id: artifact.artifactId },

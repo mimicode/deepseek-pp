@@ -37,4 +37,9 @@ export interface ArtifactOutput {
   sizeBytes: number;
   fileCount?: number;
   view?: ArtifactView;
+  /**
+   * Used only when restoring a historical tool call whose persisted artifact id
+   * is unavailable. Preview/download can read this transient content directly.
+   */
+  transientContent?: string;
 }

@@ -8,8 +8,27 @@ const STOP_WORDS = new Set([
 ]);
 
 export function tokenizeProjectText(text: string): string[] {
-  return (text.toLowerCase().match(/[a-z0-9_\u4e00-\u9fff]+/gi) ?? [])
-    .filter((token) => token.length >= 2 && !STOP_WORDS.has(token));
+  const tokens: string[] = [];
+  // Match Latin/digit runs and CJK runs separately so a string mixing both
+  // splits into distinct tokens instead of one opaque token.
+  const matches = text.toLowerCase().match(/[a-z0-9_]+|[\u4e00-\u9fff]+/gi) ?? [];
+  for (const match of matches) {
+    if (/[\u4e00-\u9fff]/.test(match)) {
+      // CJK has no whitespace word boundaries; emit overlapping bigrams (with a
+      // unigram fallback for a lone character) so Chinese queries can retrieve
+      // Chinese content rather than only matching identical character runs.
+      if (match.length === 1) {
+        tokens.push(match);
+        continue;
+      }
+      for (let i = 0; i < match.length - 1; i += 1) {
+        tokens.push(match.slice(i, i + 2));
+      }
+    } else if (match.length >= 2 && !STOP_WORDS.has(match)) {
+      tokens.push(match);
+    }
+  }
+  return tokens;
 }
 
 export function chunkProjectFile(

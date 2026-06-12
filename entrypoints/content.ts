@@ -22,6 +22,7 @@ import { normalizeBackgroundConfig } from '../core/background/config';
 import { stripToolCalls } from '../core/interceptor/tool-parser';
 import { augmentRequestBody } from '../core/interceptor/request-augmentation';
 import { containsInternalPromptMarker, sanitizeInternalPromptText } from '../core/prompt';
+import { createRestoredArtifactToolResult } from '../core/artifact';
 import type { ResponseCompletePayload, ResponseTokenSpeedPayload } from '../core/interceptor/fetch-hook';
 import { runInlineAgentLoop } from '../core/inline-agent/loop';
 import type {
@@ -58,6 +59,10 @@ import {
   registerDefaultToolResultRenderers,
   renderToolResultWithRegistry,
 } from '../core/ui/tool-result-renderer';
+import {
+  normalizeRestoredToolExecution,
+  sanitizeToolExecutionForRestoreStorage,
+} from '../core/tool/execution-restore';
 import { validateBridgeMessage } from '../core/messaging/schema';
 import { startDeepSeekHistoryOrganizer, type HistoryOrganizerController } from './content/adapters/history-organizer';
 import { startContentUxPolish, type ContentUxPolishController } from './content/adapters/ux-polish';
@@ -2502,29 +2507,7 @@ function sanitizeInlineAgentTraceStep(step: InlineAgentTraceStepRecord): InlineA
   return {
     ...step,
     text: clampText(step.text, 8000) ?? '',
-    toolExecutions: step.toolExecutions.map(sanitizeInlineAgentTraceExecution),
-  };
-}
-
-function sanitizeInlineAgentTraceExecution(execution: ToolExecutionRecord): ToolExecutionRecord {
-  const output = execution.result.output === undefined
-    ? undefined
-    : clampText(
-      typeof execution.result.output === 'string'
-        ? execution.result.output
-        : JSON.stringify(execution.result.output),
-      8000,
-    );
-
-  return {
-    name: execution.name,
-    provider: execution.provider,
-    descriptorId: execution.descriptorId,
-    result: {
-      ...execution.result,
-      detail: clampText(execution.result.detail, 4000),
-      output,
-    },
+    toolExecutions: step.toolExecutions.map((execution) => sanitizeToolExecutionForRestoreStorage(execution)),
   };
 }
 
@@ -2535,11 +2518,21 @@ async function restorePersistedInlineAgentTraces(): Promise<void> {
 
   for (const trace of traces) {
     if (!shouldTryRestoreInlineAgentTrace(trace, url) || restoredInlineAgentTraces.has(trace.id)) continue;
-    restoredInlineAgentTraces.set(trace.id, trace);
+    restoredInlineAgentTraces.set(trace.id, normalizeRestoredInlineAgentTrace(trace));
     changed = true;
   }
 
   if (changed) scheduleRenderRestoredInlineAgentTraces();
+}
+
+function normalizeRestoredInlineAgentTrace(trace: InlineAgentTraceRecord): InlineAgentTraceRecord {
+  return {
+    ...trace,
+    steps: trace.steps.map((step) => ({
+      ...step,
+      toolExecutions: step.toolExecutions.map((execution) => normalizeRestoredToolExecution(execution)),
+    })),
+  };
 }
 
 function shouldTryRestoreInlineAgentTrace(trace: InlineAgentTraceRecord, currentUrl: string): boolean {
@@ -2569,16 +2562,7 @@ async function persistToolExecutions(executions: ToolExecutionRecord[], fullText
     url,
     createdAt: Date.now(),
     content,
-    executions: executions.map((execution) => ({
-      name: execution.name,
-      provider: execution.provider,
-      descriptorId: execution.descriptorId,
-      result: {
-        ...execution.result,
-        detail: clampText(execution.result.detail, 4000),
-        output: execution.result.output === undefined ? undefined : clampText(JSON.stringify(execution.result.output), 8000),
-      },
-    })),
+    executions: executions.map((execution) => sanitizeToolExecutionForRestoreStorage(execution)),
     metadata: {
       toolCount: executions.length,
       mcpToolCount: executions.filter((execution) => execution.provider?.kind === 'mcp').length,
@@ -3059,6 +3043,7 @@ function injectToolBlockStyles() {
     .dpp-tool-block-item-detail {
       margin-top: 4px;
       padding: 6px 8px;
+      max-height: min(52vh, 420px);
       border-radius: 6px;
       background: rgba(77, 107, 254, 0.06);
       color: rgb(79, 84, 91);
@@ -3066,7 +3051,9 @@ function injectToolBlockStyles() {
       font-size: 12px;
       line-height: 1.45;
       white-space: pre-wrap;
+      overflow: auto;
       overflow-wrap: anywhere;
+      overscroll-behavior: contain;
     }
     .dpp-manual-continuation {
       margin: 10px 0 0 20px;
@@ -3436,7 +3423,9 @@ function findRestoredToolBlock(id: string): Element | null {
 }
 
 function getRestoredExecutions(record: ToolCallRestoreRecord): ToolExecutionRecord[] {
-  if (record.executions?.length) return record.executions;
+  if (record.executions?.length) {
+    return record.executions.map((execution) => normalizeRestoredToolExecution(execution));
+  }
   return (record.calls ?? []).map((call) => ({
     name: call.name,
     provider: call.provider,
@@ -3446,6 +3435,18 @@ function getRestoredExecutions(record: ToolCallRestoreRecord): ToolExecutionReco
 }
 
 function summarizeRestoredToolCall(call: ToolCall): ToolCardResult {
+  const artifactResult = createRestoredArtifactToolResult(call, currentContentLocale);
+  if (artifactResult) {
+    return {
+      ok: artifactResult.ok,
+      summary: artifactResult.summary,
+      detail: artifactResult.detail,
+      output: artifactResult.output,
+      truncated: artifactResult.truncated,
+      error: artifactResult.error,
+    };
+  }
+
   const payload = call.payload as Record<string, unknown>;
   const detail = String(payload.name ?? payload.content ?? payload.id ?? '');
 
