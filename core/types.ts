@@ -18,6 +18,9 @@ import type {
 import type {
   OfficialApiChatConfig as OfficialApiChatConfigType,
 } from './chat/official-api-config';
+import type {
+  MultimodalSettingsPatch as MultimodalSettingsPatchType,
+} from './multimodal/settings';
 import type { VoiceSettings as VoiceSettingsType } from './voice/settings';
 import type {
   ToolCall as GenericToolCall,
@@ -110,6 +113,12 @@ export type {
   OfficialDeepSeekReasoningEffort,
   OfficialDeepSeekThinkingMode,
 } from './chat/official-api-config';
+
+export type {
+  MultimodalSettings,
+  MultimodalSettingsPatch,
+  MultimodalSettingsStatus,
+} from './multimodal/settings';
 
 export type {
   VoiceCapabilityState,
@@ -482,6 +491,9 @@ export type MessageAction =
   | { type: 'DELETE_MCP_SERVER'; payload: { id: McpServerId } }
   | { type: 'GET_MCP_TOOL_CACHE'; payload: { serverId: McpServerId } }
   | { type: 'REFRESH_MCP_SERVER_TOOLS'; payload: { serverId: McpServerId } }
+  | { type: 'GET_MULTIMODAL_SETTINGS_STATUS' }
+  | { type: 'SAVE_MULTIMODAL_SETTINGS'; payload: MultimodalSettingsPatchType }
+  | { type: 'CLEAR_MULTIMODAL_SETTINGS' }
   | { type: 'GET_TOOL_DESCRIPTORS' }
   | { type: 'REFRESH_TOOL_DESCRIPTORS' }
   | { type: 'EXECUTE_TOOL_CALL'; payload: ToolCall }

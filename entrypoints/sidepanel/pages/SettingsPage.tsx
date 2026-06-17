@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   DEFAULT_BACKGROUND_OPACITY,
   clampBackgroundOpacity,
@@ -11,7 +11,7 @@ import {
   clampPetSize,
   normalizePetConfig,
 } from '../../../core/pet/config';
-import type { BackgroundConfig, Memory, PetConfig, PetPosition, SyncConfig, SyncCounts } from '../../../core/types';
+import type { BackgroundConfig, Memory, MultimodalSettingsStatus, PetConfig, PetPosition, SyncConfig, SyncCounts } from '../../../core/types';
 import { SVG_PATHS } from '../constants';
 import { getChatEnabled, setChatEnabled } from '../../../core/chat/store';
 import { validateImportedMemory } from '../../../core/sync/schema';
@@ -67,6 +67,22 @@ export default function SettingsPage() {
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [apiKeyStatus, setApiKeyStatus] = useState<'idle' | 'saving' | 'clearing' | 'success' | 'error'>('idle');
   const [apiKeyMessage, setApiKeyMessage] = useState('');
+  const [multimodalConfigured, setMultimodalConfigured] = useState<MultimodalSettingsStatus>({
+    openaiConfigured: false,
+    geminiConfigured: false,
+    openaiImageModel: 'gpt-4.1-mini',
+    geminiVideoModel: 'gemini-2.5-flash',
+    openaiBaseUrl: 'https://api.openai.com/v1',
+    geminiBaseUrl: 'https://generativelanguage.googleapis.com',
+  });
+  const [openaiApiKeyInput, setOpenaiApiKeyInput] = useState('');
+  const [geminiApiKeyInput, setGeminiApiKeyInput] = useState('');
+  const [openaiImageModel, setOpenaiImageModel] = useState('gpt-4.1-mini');
+  const [geminiVideoModel, setGeminiVideoModel] = useState('gemini-2.5-flash');
+  const [openaiBaseUrl, setOpenaiBaseUrl] = useState('https://api.openai.com/v1');
+  const [geminiBaseUrl, setGeminiBaseUrl] = useState('https://generativelanguage.googleapis.com');
+  const [multimodalStatus, setMultimodalStatus] = useState<'idle' | 'saving' | 'clearing' | 'success' | 'error'>('idle');
+  const [multimodalMessage, setMultimodalMessage] = useState('');
 
   useEffect(() => {
     getChatEnabled().then(setChatEnabledState);
@@ -75,6 +91,12 @@ export default function SettingsPage() {
         setApiKeyConfigured(result?.configured === true);
       })
       .catch(() => setApiKeyConfigured(false));
+    chrome.runtime.sendMessage({ type: 'GET_MULTIMODAL_SETTINGS_STATUS' })
+      .then((result: ({ ok?: boolean } & MultimodalSettingsStatus) | undefined) => {
+        if (!result?.ok) return;
+        syncMultimodalStatus(result);
+      })
+      .catch(() => {});
   }, []);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -334,6 +356,72 @@ export default function SettingsPage() {
     }
   };
 
+  const syncMultimodalStatus = (status: MultimodalSettingsStatus) => {
+    setMultimodalConfigured(status);
+    setOpenaiImageModel(status.openaiImageModel);
+    setGeminiVideoModel(status.geminiVideoModel);
+    setOpenaiBaseUrl(status.openaiBaseUrl);
+    setGeminiBaseUrl(status.geminiBaseUrl);
+  };
+
+  const handleSaveMultimodalSettings = async () => {
+    setMultimodalStatus('saving');
+    setMultimodalMessage('');
+    try {
+      if (!isHttpBaseUrl(openaiBaseUrl) || !isHttpBaseUrl(geminiBaseUrl)) {
+        throw new Error(t('sidepanel.settings.multimodalBaseUrlInvalid'));
+      }
+      const payload: Record<string, string> = {
+        openaiImageModel,
+        geminiVideoModel,
+        openaiBaseUrl,
+        geminiBaseUrl,
+      };
+      if (openaiApiKeyInput.trim()) payload.openaiApiKey = openaiApiKeyInput.trim();
+      if (geminiApiKeyInput.trim()) payload.geminiApiKey = geminiApiKeyInput.trim();
+
+      const result = await chrome.runtime.sendMessage({
+        type: 'SAVE_MULTIMODAL_SETTINGS',
+        payload,
+      });
+      if (!result?.ok) throw new Error(result?.error || t('sidepanel.settings.saveFailed'));
+      syncMultimodalStatus(result as MultimodalSettingsStatus);
+      setOpenaiApiKeyInput('');
+      setGeminiApiKeyInput('');
+      setMultimodalStatus('success');
+      setMultimodalMessage(t('sidepanel.settings.multimodalSaved'));
+    } catch (error) {
+      setMultimodalStatus('error');
+      setMultimodalMessage(error instanceof Error ? error.message : t('sidepanel.settings.saveFailed'));
+    }
+  };
+
+  const handleClearMultimodalSettings = async () => {
+    setMultimodalStatus('clearing');
+    setMultimodalMessage('');
+    try {
+      const result = await chrome.runtime.sendMessage({ type: 'CLEAR_MULTIMODAL_SETTINGS' });
+      if (!result?.ok) throw new Error(result?.error || t('sidepanel.settings.clearFailed'));
+      syncMultimodalStatus(result as MultimodalSettingsStatus);
+      setOpenaiApiKeyInput('');
+      setGeminiApiKeyInput('');
+      setMultimodalStatus('success');
+      setMultimodalMessage(t('sidepanel.settings.multimodalCleared'));
+    } catch (error) {
+      setMultimodalStatus('error');
+      setMultimodalMessage(error instanceof Error ? error.message : t('sidepanel.settings.clearFailed'));
+    }
+  };
+
+  const isHttpBaseUrl = (value: string) => {
+    try {
+      const url = new URL(value.trim());
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
+
   const updateField = (field: keyof SyncConfig, value: string) => {
     setSyncConfig((prev) => ({ ...prev, [field]: value }));
   };
@@ -587,6 +675,140 @@ export default function SettingsPage() {
                 }}
               />
             </button>
+          </div>
+
+          <div
+            className="pt-3 border-t space-y-2"
+            style={{ borderColor: 'var(--ds-border)' }}
+          >
+            <div className="flex justify-between items-start gap-3">
+              <div>
+                <div className="text-xs font-medium" style={{ color: 'var(--ds-text)' }}>
+                  {t('sidepanel.settings.multimodalApi')}
+                </div>
+                <div className="text-[11px] mt-0.5" style={{ color: 'var(--ds-text-tertiary)' }}>
+                  {t('sidepanel.settings.multimodalApiDescription')}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1 shrink-0">
+                <span
+                  className="text-[10px] px-2 py-0.5 rounded-full text-center"
+                  style={{
+                    color: multimodalConfigured.openaiConfigured ? 'var(--ds-success)' : 'var(--ds-text-tertiary)',
+                    background: multimodalConfigured.openaiConfigured ? 'var(--ds-success-bg)' : 'var(--ds-surface)',
+                  }}
+                >
+                  OpenAI {multimodalConfigured.openaiConfigured ? t('sidepanel.settings.configured') : t('sidepanel.settings.notConfigured')}
+                </span>
+                <span
+                  className="text-[10px] px-2 py-0.5 rounded-full text-center"
+                  style={{
+                    color: multimodalConfigured.geminiConfigured ? 'var(--ds-success)' : 'var(--ds-text-tertiary)',
+                    background: multimodalConfigured.geminiConfigured ? 'var(--ds-success-bg)' : 'var(--ds-surface)',
+                  }}
+                >
+                  Gemini {multimodalConfigured.geminiConfigured ? t('sidepanel.settings.configured') : t('sidepanel.settings.notConfigured')}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2">
+              <FieldLabel label="OpenAI API Key">
+                <input
+                  type="password"
+                  value={openaiApiKeyInput}
+                  onChange={(event) => setOpenaiApiKeyInput(event.target.value)}
+                  placeholder={multimodalConfigured.openaiConfigured ? t('sidepanel.settings.openaiKeyReplacePlaceholder') : 'sk-...'}
+                  className={inputClass}
+                  style={inputStyle}
+                />
+              </FieldLabel>
+              <FieldLabel label="Gemini API Key">
+                <input
+                  type="password"
+                  value={geminiApiKeyInput}
+                  onChange={(event) => setGeminiApiKeyInput(event.target.value)}
+                  placeholder={multimodalConfigured.geminiConfigured ? t('sidepanel.settings.geminiKeyReplacePlaceholder') : 'AIza...'}
+                  className={inputClass}
+                  style={inputStyle}
+                />
+              </FieldLabel>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2">
+              <FieldLabel label={t('sidepanel.settings.openaiImageModel')}>
+                <input
+                  value={openaiImageModel}
+                  onChange={(event) => setOpenaiImageModel(event.target.value)}
+                  placeholder="gpt-4.1-mini"
+                  className={inputClass}
+                  style={inputStyle}
+                />
+              </FieldLabel>
+              <FieldLabel label={t('sidepanel.settings.geminiVideoModel')}>
+                <input
+                  value={geminiVideoModel}
+                  onChange={(event) => setGeminiVideoModel(event.target.value)}
+                  placeholder="gemini-2.5-flash"
+                  className={inputClass}
+                  style={inputStyle}
+                />
+              </FieldLabel>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2">
+              <FieldLabel label={t('sidepanel.settings.openaiBaseUrl')}>
+                <input
+                  type="url"
+                  value={openaiBaseUrl}
+                  onChange={(event) => setOpenaiBaseUrl(event.target.value)}
+                  placeholder="https://api.openai.com/v1"
+                  className={inputClass}
+                  style={inputStyle}
+                />
+              </FieldLabel>
+              <FieldLabel label={t('sidepanel.settings.geminiBaseUrl')}>
+                <input
+                  type="url"
+                  value={geminiBaseUrl}
+                  onChange={(event) => setGeminiBaseUrl(event.target.value)}
+                  placeholder="https://generativelanguage.googleapis.com"
+                  className={inputClass}
+                  style={inputStyle}
+                />
+              </FieldLabel>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleSaveMultimodalSettings}
+                disabled={multimodalStatus === 'saving'}
+                className="ds-btn-secondary flex-1 px-3 py-2 text-[11px] font-medium rounded-lg transition-all duration-150 disabled:opacity-40"
+              >
+                {multimodalStatus === 'saving' ? t('sidepanel.settings.saving') : t('common.save')}
+              </button>
+              {(multimodalConfigured.openaiConfigured || multimodalConfigured.geminiConfigured) && (
+                <button
+                  onClick={handleClearMultimodalSettings}
+                  disabled={multimodalStatus === 'clearing'}
+                  className="ds-btn-secondary px-3 py-2 text-[11px] font-medium rounded-lg transition-all duration-150 disabled:opacity-40"
+                >
+                  {multimodalStatus === 'clearing' ? t('sidepanel.settings.clearing') : t('sidepanel.settings.clearMultimodalApi')}
+                </button>
+              )}
+            </div>
+
+            {multimodalMessage && (
+              <div
+                className="text-[11px] px-3 py-2 rounded-lg"
+                style={{
+                  color: multimodalStatus === 'error' ? 'var(--ds-danger)' : 'var(--ds-success)',
+                  background: multimodalStatus === 'error' ? 'var(--ds-danger-bg)' : 'var(--ds-success-bg)',
+                }}
+              >
+                {multimodalMessage}
+              </div>
+            )}
           </div>
 
           <div
@@ -1164,5 +1386,14 @@ export default function SettingsPage() {
       </section>
 
     </div>
+  );
+}
+
+function FieldLabel({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block space-y-1">
+      <span className="block text-[10px] font-medium" style={{ color: 'var(--ds-text-tertiary)' }}>{label}</span>
+      {children}
+    </label>
   );
 }

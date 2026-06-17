@@ -196,11 +196,26 @@ DeepSeek++ 是面向 [DeepSeek](https://chat.deepseek.com) 网页版的开源浏
 - **权限管理** — 侧边栏可直接授权、测试连接、刷新工具和查看状态
 - **结果自动回传** — 工具执行完成后，结果自动发回同一会话继续生成，实现多轮工具调用
 - **支持 Agent 式续跑** — MCP 工具结果可以回传到原会话继续生成，支撑长任务里的多步工具执行
+- **内置多模态预设** — 可创建 `多模态` 预设，让 DeepSeek 通过 OpenAI 分析多张图片，通过 Gemini 分析视频
 - **本地安全** — MCP 配置和密钥保存在浏览器本地，WebDAV 同步不会同步敏感信息
 
 <p align="center">
   <img src="assets/screenshot-sidepanel-mcp.png" width="300" alt="MCP 管理侧边栏">
 </p>
+
+安装多模态 Native Host：
+
+```bash
+npx deepseek-pp-multimodal-mcp install --browser chrome --extension-id <扩展ID>
+```
+
+侧边栏 `MCP` 页会自动填入当前扩展 ID。安装后在设置页的「多模态 API」配置 OpenAI / Gemini Key、模型和请求地址，然后启用 `多模态` 预设、点击测试和刷新工具。
+
+从源码开发时也可以使用：
+
+```bash
+npm run multimodal:install -- --browser chrome --extension-id <扩展ID>
+```
 
 ### OfficeCLI 文档工具
 

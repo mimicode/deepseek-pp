@@ -126,6 +126,17 @@ import {
 import { refreshMcpServerDiscovery } from '../core/mcp/discovery';
 import { getMcpOriginPattern, requestMcpServerOriginPermission } from '../core/mcp/transports';
 import { SHELL_MCP_NATIVE_HOST, SHELL_MCP_SERVER_NAME, createShellMcpPresetInput } from '../core/shell';
+import {
+  MULTIMODAL_MCP_NATIVE_HOST,
+  MULTIMODAL_MCP_SERVER_NAME,
+  createMultimodalMcpPresetInput,
+} from '../core/multimodal';
+import {
+  clearMultimodalSettings,
+  getMultimodalSettingsStatus,
+  saveMultimodalSettings,
+  type MultimodalSettingsPatch,
+} from '../core/multimodal/settings';
 import { getWebToolSettings, setWebToolEnabled } from '../core/tool/web-settings';
 import { getAllScenarios, applyScenarioTemplate } from '../core/scenario/store';
 import { getChatEnabled } from '../core/chat/store';
@@ -263,7 +274,7 @@ export default defineBackground(() => {
   });
 
   archiveStaleMemories().catch((error) => reportBackgroundStartupError('archive_stale_memories_failed', error));
-  ensureShellMcpPreset().catch((error) => reportBackgroundStartupError('shell_mcp_preset_failed', error));
+  ensureBuiltInMcpPresets().catch((error) => reportBackgroundStartupError('builtin_mcp_presets_failed', error));
   refreshWhatsNewBadge().catch((error) => reportBackgroundStartupError('whats_new_badge_failed', error));
   ensureAutomationWakeAlarm().catch((error) => reportBackgroundStartupError('automation_alarm_create_failed', error));
   reconcileInterruptedChatLoopOnWake().catch((error) => reportBackgroundStartupError('chat_loop_reconcile_failed', error));
@@ -416,13 +427,19 @@ async function openSidePanelAndSendText(text: string, tab?: chrome.tabs.Tab) {
   chrome.runtime.sendMessage({ type: 'OPEN_CHAT_WITH_TEXT', text }).catch(() => {});
 }
 
-async function ensureShellMcpPreset() {
+async function ensureBuiltInMcpPresets() {
   const servers = await getAllMcpServers();
-  const exists = servers.some((s) =>
+  const shellExists = servers.some((s) =>
     s.displayName === SHELL_MCP_SERVER_NAME || s.transport.nativeHost === SHELL_MCP_NATIVE_HOST
   );
-  if (!exists) {
+  if (!shellExists) {
     await createMcpServer(createShellMcpPresetInput({ enabled: false }));
+  }
+  const multimodalExists = servers.some((s) =>
+    s.displayName === MULTIMODAL_MCP_SERVER_NAME || s.transport.nativeHost === MULTIMODAL_MCP_NATIVE_HOST
+  );
+  if (!multimodalExists) {
+    await createMcpServer(createMultimodalMcpPresetInput({ enabled: false }));
   }
 }
 
@@ -953,6 +970,15 @@ async function handleMessage(
       await createContextMenus();
       await broadcastChatAuthStatus(sender.tab?.id);
       return { ok: true, configured: false };
+
+    case 'GET_MULTIMODAL_SETTINGS_STATUS':
+      return { ok: true, ...(await getMultimodalSettingsStatus()) };
+
+    case 'SAVE_MULTIMODAL_SETTINGS':
+      return { ok: true, ...(await saveMultimodalSettings(message.payload as MultimodalSettingsPatch)) };
+
+    case 'CLEAR_MULTIMODAL_SETTINGS':
+      return { ok: true, ...(await clearMultimodalSettings()) };
 
     case 'GET_DEEPSEEK_THEME':
       return getDeepSeekTheme();

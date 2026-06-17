@@ -196,11 +196,26 @@ Language can follow the browser or be set to English or Simplified Chinese. Deep
 - **Permission and status management** - Authorize tools, test connections, refresh tool lists, and inspect status from the side panel.
 - **Results return automatically** - Tool results return to the same conversation so the model can keep generating.
 - **Agentic continuation support** - MCP tool results can feed back into the original conversation, supporting multi-step long-running tasks.
+- **Built-in multimodal preset** - Create the `Multimodal` preset so DeepSeek can analyze multiple images through OpenAI and videos through Gemini.
 - **Local security** - MCP configuration and secrets stay in browser-local storage. WebDAV sync does not sync sensitive data.
 
 <p align="center">
   <img src="assets/screenshot-sidepanel-mcp.png" width="300" alt="MCP management side panel">
 </p>
+
+Install the Multimodal Native Host:
+
+```bash
+npx deepseek-pp-multimodal-mcp install --browser chrome --extension-id <extension-id>
+```
+
+The side-panel MCP page automatically fills in the current extension ID. After installation, configure OpenAI / Gemini keys, models, and request URLs under `Settings` → `Multimodal API`, then enable the `Multimodal` preset, test it, and refresh tools.
+
+When developing from source, you can also use:
+
+```bash
+npm run multimodal:install -- --browser chrome --extension-id <extension-id>
+```
 
 ### OfficeCLI Document Tools
 

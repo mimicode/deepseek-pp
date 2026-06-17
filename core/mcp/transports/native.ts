@@ -6,6 +6,8 @@ import type {
   McpServerConfig,
 } from '../types';
 import { McpTransportError, normalizeJsonRpcResponse } from './common';
+import { MULTIMODAL_MCP_NATIVE_HOST } from '../../multimodal';
+import { getMultimodalNativeEnv } from '../../multimodal/settings';
 
 interface McpNativeEnvelope {
   protocol: 'deepseek-pp-mcp-native';
@@ -102,7 +104,7 @@ async function sendNativeMessage<TParams extends Record<string, unknown> | undef
   }
 
   const expectedRequest = 'id' in message ? message as McpJsonRpcRequest<TParams> : undefined;
-  const envelope = createNativeEnvelope(server, message);
+  const envelope = await createNativeEnvelope(server, message);
 
   let response: unknown;
   if (expectedRequest) {
@@ -147,10 +149,11 @@ function sendAndWait(
   });
 }
 
-function createNativeEnvelope(
+async function createNativeEnvelope(
   server: McpServerConfig,
   message: McpJsonRpcRequest<any> | McpJsonRpcNotification,
-): McpNativeEnvelope {
+): Promise<McpNativeEnvelope> {
+  const env = await createNativeEnv(server);
   return {
     protocol: 'deepseek-pp-mcp-native',
     version: 1,
@@ -159,8 +162,18 @@ function createNativeEnvelope(
       command: server.transport.command,
       args: server.transport.args,
       cwd: server.transport.cwd,
-      env: server.transport.env,
+      env,
     },
     message,
   };
+}
+
+async function createNativeEnv(server: McpServerConfig): Promise<Record<string, string> | undefined> {
+  if (server.transport.nativeHost === MULTIMODAL_MCP_NATIVE_HOST) {
+    const env = await getMultimodalNativeEnv();
+    return Object.keys(env).length > 0 ? env : undefined;
+  }
+
+  const env: Record<string, string> = { ...(server.transport.env ?? {}) };
+  return Object.keys(env).length > 0 ? env : undefined;
 }

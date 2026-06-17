@@ -5,6 +5,12 @@ import {
   createShellMcpPresetInput,
 } from '../../../core/shell';
 import {
+  MULTIMODAL_MCP_NATIVE_HOST,
+  MULTIMODAL_MCP_PACKAGE_NAME,
+  MULTIMODAL_MCP_SERVER_NAME,
+  createMultimodalMcpPresetInput,
+} from '../../../core/multimodal';
+import {
   getSupportedMcpTransportKinds,
   isShellNativeHostSupported,
 } from '../../../core/platform';
@@ -207,6 +213,35 @@ export default function McpPage() {
     await load();
   };
 
+  const createMultimodalPreset = async () => {
+    setMessage('');
+    if (!nativeMessagingSupported) {
+      setMessage(t('sidepanel.mcpPage.messages.nativeMessagingUnsupported'));
+      return;
+    }
+    const existing = servers.find((server) =>
+      server.displayName === MULTIMODAL_MCP_SERVER_NAME ||
+      server.transport.nativeHost === MULTIMODAL_MCP_NATIVE_HOST
+    );
+    if (existing) {
+      setSelectedId(existing.id);
+      setMessage(t('sidepanel.mcpPage.messages.multimodalExistsSelected'));
+      return;
+    }
+
+    const server: McpServerConfig | null = await chrome.runtime.sendMessage({
+      type: 'CREATE_MCP_SERVER',
+      payload: createMultimodalMcpPresetInput(),
+    });
+    if (!server) {
+      setMessage(t('sidepanel.mcpPage.messages.multimodalCreateFailed'));
+      return;
+    }
+    setSelectedId(server.id);
+    setMessage(t('sidepanel.mcpPage.messages.multimodalCreated'));
+    await load();
+  };
+
   const startEdit = (server: McpServerConfig) => {
     setEditing(server);
     setMessage('');
@@ -326,6 +361,14 @@ export default function McpPage() {
               className="ds-btn-secondary px-3 py-1.5 text-xs rounded-lg transition-all duration-150 disabled:opacity-50"
             >
               {t('sidepanel.mcpPage.shell')}
+            </button>
+            <button
+              onClick={createMultimodalPreset}
+              disabled={!nativeMessagingSupported}
+              title={!nativeMessagingSupported ? t('sidepanel.mcpPage.messages.nativeMessagingUnsupported') : undefined}
+              className="ds-btn-secondary px-3 py-1.5 text-xs rounded-lg transition-all duration-150 disabled:opacity-50"
+            >
+              {t('sidepanel.mcpPage.multimodal')}
             </button>
             <button
               onClick={startCreate}
@@ -544,15 +587,18 @@ function McpServerForm({
               placeholder="/Users/me/project"
             />
           </Field>
-          <Field label={t('sidepanel.mcpPage.form.env')}>
-            <textarea
-              value={form.env}
-              onChange={(event) => update('env', event.target.value)}
-              className="ds-input w-full rounded-lg px-3 py-2 text-sm min-h-18 resize-y"
-              placeholder={'KEY=value\nTOKEN=...'}
-            />
-          </Field>
         </div>
+      )}
+
+      {form.transportKind === 'stdio_bridge' && (
+        <Field label={t('sidepanel.mcpPage.form.env')}>
+          <textarea
+            value={form.env}
+            onChange={(event) => update('env', event.target.value)}
+            className="ds-input w-full rounded-lg px-3 py-2 text-sm min-h-18 resize-y"
+            placeholder={'KEY=value\nTOKEN=...'}
+          />
+        </Field>
       )}
 
       {form.transportKind !== 'native_messaging' && (
@@ -846,6 +892,10 @@ function ServerDetail({
 
       {isShellServer(server) && (
         <ShellSetupHint server={server} cache={cache} t={t} />
+      )}
+
+      {isMultimodalServer(server) && (
+        <MultimodalSetupHint server={server} cache={cache} t={t} />
       )}
 
       <div className="ds-card rounded-lg p-3 space-y-2">
@@ -1280,6 +1330,10 @@ function isShellServer(server: McpServerConfig): boolean {
   return server.displayName === SHELL_MCP_SERVER_NAME || server.transport.nativeHost === SHELL_MCP_NATIVE_HOST;
 }
 
+function isMultimodalServer(server: McpServerConfig): boolean {
+  return server.displayName === MULTIMODAL_MCP_SERVER_NAME || server.transport.nativeHost === MULTIMODAL_MCP_NATIVE_HOST;
+}
+
 function ShellSetupHint({
   server,
   cache,
@@ -1336,6 +1390,62 @@ function ShellSetupHint({
   );
 }
 
+function MultimodalSetupHint({
+  server,
+  cache,
+  t,
+}: {
+  server: McpServerConfig;
+  cache: McpToolCacheEntry | null;
+  t: Translator;
+}) {
+  const { message, isError } = nativeSetupMessage(server, cache, t, 'multimodal');
+  const setup = multimodalInstallCommand();
+  return (
+    <div className="ds-card rounded-lg px-3 py-2 text-[11px] leading-4" style={{ color: 'var(--ds-text-secondary)' }}>
+      <div className="font-medium mb-1" style={{ color: 'var(--ds-text)' }}>Multimodal Native Host</div>
+      {isError ? (
+        <div className="rounded px-2 py-1 mb-1.5" style={{ color: 'var(--ds-danger)', background: 'var(--ds-danger-bg)', border: '1px solid var(--ds-danger)' }}>
+          {message}
+        </div>
+      ) : (
+        <div>{message}</div>
+      )}
+      <div className="mt-1" style={{ color: 'var(--ds-text-tertiary)' }}>
+        {setup.mode === 'local'
+          ? t('sidepanel.mcpPage.multimodalSetup.localIntro')
+          : t('sidepanel.mcpPage.multimodalSetup.publishedIntro')}
+      </div>
+      <div className="mt-1 font-mono break-all select-all rounded px-2 py-1" style={{ color: 'var(--ds-text)', background: 'var(--ds-surface)' }}>
+        {setup.command}
+      </div>
+      {setup.fallbackCommand && (
+        <>
+          <div className="mt-1" style={{ color: 'var(--ds-text-tertiary)' }}>
+            {t('sidepanel.mcpPage.multimodalSetup.fallbackIntro')}
+          </div>
+          <div className="mt-1 font-mono break-all select-all rounded px-2 py-1" style={{ color: 'var(--ds-text)', background: 'var(--ds-surface)' }}>
+            {setup.fallbackCommand}
+          </div>
+        </>
+      )}
+      <div className="mt-1" style={{ color: 'var(--ds-text-tertiary)' }}>
+        {setup.usesExtensionId
+          ? t('sidepanel.mcpPage.shellSetup.detectedExtensionId', { browser: browserLabel(setup.browser) })
+          : t('sidepanel.mcpPage.shellSetup.firefoxFixedId')}
+      </div>
+      <div className="mt-1" style={{ color: 'var(--ds-text-tertiary)' }}>
+        {t('sidepanel.mcpPage.multimodalSetup.settingsNote')}
+      </div>
+      <div className="mt-1" style={{ color: 'var(--ds-text-tertiary)' }}>
+        {!server.enabled
+          ? t('sidepanel.mcpPage.multimodalSetup.enableAndTest')
+          : t('sidepanel.mcpPage.shellSetup.restartAndTest')}
+      </div>
+    </div>
+  );
+}
+
 type NativeHostBrowser = 'chrome' | 'chromium' | 'edge' | 'firefox';
 
 function shellInstallCommand(): {
@@ -1351,6 +1461,27 @@ function shellInstallCommand(): {
   const installArgs = `install --browser ${browser}${extensionArg} --skip-officecli`;
   const localCommand = `npm run shell:install -- ${installArgs}`;
   const publishedCommand = `npx deepseek-pp-shell-host ${installArgs}`;
+
+  if (isUnpackedExtension()) {
+    return { browser, command: localCommand, fallbackCommand: publishedCommand, usesExtensionId, mode: 'local' };
+  }
+
+  return { browser, command: publishedCommand, usesExtensionId, mode: 'published' };
+}
+
+function multimodalInstallCommand(): {
+  browser: NativeHostBrowser;
+  command: string;
+  fallbackCommand?: string;
+  usesExtensionId: boolean;
+  mode: 'local' | 'published';
+} {
+  const browser = currentNativeHostBrowser();
+  const usesExtensionId = browser !== 'firefox';
+  const extensionArg = usesExtensionId ? ` --extension-id ${chrome.runtime.id || '<extension-id>'}` : '';
+  const installArgs = `install --browser ${browser}${extensionArg}`;
+  const localCommand = `npm run multimodal:install -- ${installArgs}`;
+  const publishedCommand = `npx ${MULTIMODAL_MCP_PACKAGE_NAME} ${installArgs}`;
 
   if (isUnpackedExtension()) {
     return { browser, command: localCommand, fallbackCommand: publishedCommand, usesExtensionId, mode: 'local' };
@@ -1383,12 +1514,22 @@ function shellSetupMessage(
   cache: McpToolCacheEntry | null,
   t: Translator,
 ): { message: string; isError: boolean } {
+  return nativeSetupMessage(server, cache, t, 'shell');
+}
+
+function nativeSetupMessage(
+  server: McpServerConfig,
+  cache: McpToolCacheEntry | null,
+  t: Translator,
+  kind: 'shell' | 'multimodal',
+): { message: string; isError: boolean } {
+  const setupKey = kind === 'shell' ? 'sidepanel.mcpPage.shellSetup' : 'sidepanel.mcpPage.multimodalSetup';
   const error = `${cache?.health.error ?? ''} ${server.lastError ?? ''}`.toLowerCase();
   if (error.includes('forbidden')) {
-    return { message: t('sidepanel.mcpPage.shellSetup.forbidden'), isError: true };
+    return { message: t(`${setupKey}.forbidden` as LocaleMessageKey), isError: true };
   }
   if (error.includes('native_host_unavailable') || error.includes('native messaging host not found') || error.includes('not found') || error.includes('specified native messaging host')) {
-    return { message: t('sidepanel.mcpPage.shellSetup.notFound'), isError: true };
+    return { message: t(`${setupKey}.notFound` as LocaleMessageKey), isError: true };
   }
   if (error.includes('native_messaging_unavailable')) {
     return { message: t('sidepanel.mcpPage.shellSetup.unavailable'), isError: true };
@@ -1399,15 +1540,15 @@ function shellSetupMessage(
     error.includes('cannot reach') ||
     error.includes('connection refused')
   ) {
-    return { message: t('sidepanel.mcpPage.shellSetup.cannotConnect'), isError: true };
+    return { message: t(`${setupKey}.cannotConnect` as LocaleMessageKey), isError: true };
   }
   if (cache?.health.status === 'ready') {
-    return { message: t('sidepanel.mcpPage.shellSetup.ready', { count: cache.health.toolCount }), isError: false };
+    return { message: t(`${setupKey}.ready` as LocaleMessageKey, { count: cache.health.toolCount }), isError: false };
   }
   if (!server.enabled) {
-    return { message: t('sidepanel.mcpPage.shellSetup.disabled'), isError: false };
+    return { message: t(`${setupKey}.disabled` as LocaleMessageKey), isError: false };
   }
-  return { message: t('sidepanel.mcpPage.shellSetup.installFirst'), isError: false };
+  return { message: t(`${setupKey}.installFirst` as LocaleMessageKey), isError: false };
 }
 
 function transportLabel(kind: McpTransportKind): string {
