@@ -4692,6 +4692,7 @@ function updateToolBlockContent(block: HTMLElement, executions: ToolExecutionRec
         : renderToolResultWithRegistry({
           target: detailEl,
           result: exec.result,
+          locale: currentContentLocale,
           sendMessage: sendRuntimeMessage,
         });
       if (!rendered) detailEl.textContent = detail;
@@ -4831,6 +4832,7 @@ function renderDetachedArtifactResults(
     const rendered = renderToolResultWithRegistry({
       target: item,
       result: exec.result,
+      locale: currentContentLocale,
       sendMessage: sendRuntimeMessage,
     });
     if (rendered) container.appendChild(item);

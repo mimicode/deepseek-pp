@@ -31,6 +31,7 @@ describe('tool result renderer registry', () => {
     const rendered = renderToolResultWithRegistry({
       target,
       result,
+      locale: 'en',
       sendMessage: vi.fn(),
     });
 
@@ -61,6 +62,7 @@ describe('tool result renderer registry', () => {
     expect(renderToolResultWithRegistry({
       target,
       result,
+      locale: 'en',
       sendMessage: vi.fn(),
     })).toBe(true);
 
@@ -100,6 +102,7 @@ describe('tool result renderer registry', () => {
     const rendered = renderToolResultWithRegistry({
       target,
       result,
+      locale: 'en',
       sendMessage,
     });
 
@@ -149,6 +152,7 @@ describe('tool result renderer registry', () => {
     const rendered = renderToolResultWithRegistry({
       target,
       result,
+      locale: 'en',
       sendMessage,
     });
 
@@ -193,6 +197,7 @@ describe('tool result renderer registry', () => {
     renderToolResultWithRegistry({
       target,
       result,
+      locale: 'en',
       sendMessage,
     });
 
@@ -255,6 +260,7 @@ describe('tool result renderer registry', () => {
     const rendered = renderToolResultWithRegistry({
       target,
       result,
+      locale: 'en',
       sendMessage,
     });
     const button = target.querySelector<HTMLButtonElement>('.dpp-artifact-run');
