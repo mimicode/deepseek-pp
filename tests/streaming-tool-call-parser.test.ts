@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createStreamingToolCallParser } from '../core/interceptor/streaming-tool-call-parser';
 import { createArtifactToolDescriptors } from '../core/artifact';
+import { isExternalizedToolPayload } from '../core/tool/externalized-payload';
 
 describe('createStreamingToolCallParser', () => {
   const descriptors = createArtifactToolDescriptors('en');
@@ -87,5 +88,25 @@ describe('createStreamingToolCallParser', () => {
       language: 'html',
     });
     expect(completed.completed[0].raw.length).toBeLessThan(2200);
+  });
+
+  it('externalizes very large artifact payloads instead of retaining them in the page parser', () => {
+    const parser = createStreamingToolCallParser(descriptors);
+    const html = '<!doctype html>' + '<section>chunk</section>'.repeat(6000);
+    const payload = JSON.stringify({
+      filename: 'huge.html',
+      content: html,
+      language: 'html',
+    });
+
+    parser.append('<artifact_create>');
+    const mid = parser.append(payload.slice(0, 40000));
+    const end = parser.append(`${payload.slice(40000)}</artifact_create>`);
+
+    expect(mid.streamed.length).toBe(0);
+    expect(end.streamed.length).toBeGreaterThan(0);
+    expect(end.completed).toHaveLength(1);
+    expect(isExternalizedToolPayload(end.completed[0].payload)).toBe(true);
+    expect(end.completed[0].raw).toContain('externalized');
   });
 });

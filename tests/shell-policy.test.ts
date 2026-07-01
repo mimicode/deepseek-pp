@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createShellMcpPresetInput } from '../core/shell/policy';
+import {
+  buildShellAllowlistUpgrade,
+  createShellMcpPresetInput,
+  DEFAULT_SHELL_MCP_ALLOWLIST_TOOL_NAMES,
+  isShellMcpServer,
+} from '../core/shell/policy';
 import { SHELL_TOOL_NAMES } from '../core/shell/contracts';
 
 describe('createShellMcpPresetInput', () => {
@@ -7,7 +12,7 @@ describe('createShellMcpPresetInput', () => {
     const preset = createShellMcpPresetInput();
 
     expect(preset.enabled).toBe(false);
-    expect(preset.allowlist).toEqual({ mode: 'allow', toolNames: ['shell_status', 'python_status', 'local_skill_preview', 'local_folder_pick'] });
+    expect(preset.allowlist).toEqual({ mode: 'allow', toolNames: [...DEFAULT_SHELL_MCP_ALLOWLIST_TOOL_NAMES] });
     expect(preset.execution).toEqual({ enabled: false, mode: 'manual' });
   });
 
@@ -17,7 +22,7 @@ describe('createShellMcpPresetInput', () => {
     // tools so a fresh install cannot execute commands until the user opts in.
     const preset = createShellMcpPresetInput();
     const allowlisted = new Set(preset.allowlist?.toolNames ?? []);
-    const gatedTools = ['shell_exec', 'python_exec', 'shell_session_begin', 'shell_session_exec', 'shell_session_end'];
+    const gatedTools = ['shell_exec', 'python_exec', 'local_file_write', 'local_file_read', 'local_file_stat', 'shell_session_begin', 'shell_session_exec', 'shell_session_end'];
     for (const tool of gatedTools) {
       expect(allowlisted.has(tool as string)).toBe(false);
     }
@@ -29,5 +34,57 @@ describe('createShellMcpPresetInput', () => {
     expect(SHELL_TOOL_NAMES).toContain('shell_session_begin');
     expect(SHELL_TOOL_NAMES).toContain('shell_session_exec');
     expect(SHELL_TOOL_NAMES).toContain('shell_session_end');
+  });
+
+  it('upgrades legacy read-only Shell allowlists with local file tools too', () => {
+    expect(buildShellAllowlistUpgrade({
+      mode: 'allow',
+      toolNames: ['shell_status', 'python_status'],
+    })).toEqual({
+      mode: 'allow',
+      toolNames: [
+        'shell_status',
+        'python_status',
+        'local_skill_preview',
+        'local_folder_pick',
+        'local_file_stat',
+        'local_file_read',
+        'local_file_write',
+      ],
+    });
+  });
+
+  it('preserves existing exec tools while upgrading Shell allowlists', () => {
+    expect(buildShellAllowlistUpgrade({
+      mode: 'allow',
+      toolNames: ['shell_status', 'python_status', 'shell_exec'],
+    })).toEqual({
+      mode: 'allow',
+      toolNames: [
+        'shell_status',
+        'python_status',
+        'shell_exec',
+        'local_skill_preview',
+        'local_folder_pick',
+        'local_file_stat',
+        'local_file_read',
+        'local_file_write',
+      ],
+    });
+  });
+
+  it('detects the built-in Shell Local server by name or native host', () => {
+    expect(isShellMcpServer({
+      displayName: 'Shell Local',
+      transport: { kind: 'native_messaging', nativeHost: 'other.host' },
+    })).toBe(true);
+    expect(isShellMcpServer({
+      displayName: 'Anything',
+      transport: { kind: 'native_messaging', nativeHost: 'com.deepseek_pp.shell' },
+    })).toBe(true);
+    expect(isShellMcpServer({
+      displayName: 'Anything',
+      transport: { kind: 'native_messaging', nativeHost: 'com.example.other' },
+    })).toBe(false);
   });
 });

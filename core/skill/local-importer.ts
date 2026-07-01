@@ -1,6 +1,6 @@
 import { executeMcpToolCall, refreshMcpServerDiscovery } from '../mcp/discovery';
 import { getAllMcpServers, updateMcpServer } from '../mcp/store';
-import { SHELL_MCP_NATIVE_HOST, SHELL_MCP_SERVER_NAME } from '../shell';
+import { buildShellAllowlistUpgrade, isShellMcpServer } from '../shell';
 import type {
   LocalSkillImportRequest,
   LocalSkillImportResult,
@@ -19,7 +19,6 @@ import {
 } from './registry';
 
 const MAX_SKILL_BYTES = 120_000;
-const LOCAL_SKILL_SHELL_TOOLS = ['local_skill_preview', 'local_folder_pick'];
 
 interface LocalSkillHostBundle {
   rootPath: string;
@@ -323,8 +322,8 @@ async function getShellMcpServer(): Promise<McpServerConfig> {
   const servers = await getAllMcpServers({ includeSecrets: false });
   let server = servers.find((candidate) =>
     candidate.transport.kind === 'native_messaging' &&
-    candidate.transport.nativeHost === SHELL_MCP_NATIVE_HOST
-  ) ?? servers.find((candidate) => candidate.displayName === SHELL_MCP_SERVER_NAME);
+    isShellMcpServer(candidate)
+  );
 
   if (!server) {
     throw new Error('Shell MCP was not found. Create and install Shell Native Host from the MCP page first.');
@@ -340,16 +339,11 @@ async function getShellMcpServer(): Promise<McpServerConfig> {
 }
 
 async function ensureLocalSkillShellToolsAllowed(server: McpServerConfig): Promise<McpServerConfig> {
-  if (server.allowlist.mode !== 'allow') return server;
-  const names = new Set(server.allowlist.toolNames);
-  const missing = LOCAL_SKILL_SHELL_TOOLS.filter((name) => !names.has(name));
-  if (missing.length === 0) return server;
+  const upgradedAllowlist = buildShellAllowlistUpgrade(server.allowlist);
+  if (!upgradedAllowlist) return server;
 
   const updated = await updateMcpServer(server.id, {
-    allowlist: {
-      mode: 'allow',
-      toolNames: [...server.allowlist.toolNames, ...missing],
-    },
+    allowlist: upgradedAllowlist,
   });
   return updated ?? server;
 }

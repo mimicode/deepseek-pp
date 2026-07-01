@@ -1,4 +1,4 @@
-import type { McpServerCreateInput } from '../mcp/types';
+import type { McpServerConfig, McpServerCreateInput, McpToolAllowlist } from '../mcp/types';
 import { SHELL_MCP_NATIVE_HOST, SHELL_MCP_SERVER_NAME } from './contracts';
 
 export interface ShellMcpPresetOptions {
@@ -6,6 +6,24 @@ export interface ShellMcpPresetOptions {
   enabled?: boolean;
   executionEnabled?: boolean;
 }
+
+export const DEFAULT_SHELL_MCP_ALLOWLIST_TOOL_NAMES = [
+  'shell_status',
+  'python_status',
+  'local_skill_preview',
+  'local_folder_pick',
+] as const;
+
+export const LOCAL_SKILL_SHELL_TOOL_NAMES = [
+  'local_skill_preview',
+  'local_folder_pick',
+] as const;
+
+export const LOCAL_FILE_SHELL_TOOL_NAMES = [
+  'local_file_stat',
+  'local_file_read',
+  'local_file_write',
+] as const;
 
 export function createShellMcpPresetInput(
   options: ShellMcpPresetOptions = {},
@@ -30,11 +48,33 @@ export function createShellMcpPresetInput(
     },
     allowlist: {
       mode: 'allow',
-      toolNames: ['shell_status', 'python_status', 'local_skill_preview', 'local_folder_pick'],
+      toolNames: [...DEFAULT_SHELL_MCP_ALLOWLIST_TOOL_NAMES],
     },
     execution: {
       enabled: options.executionEnabled ?? false,
       mode: 'manual',
     },
+  };
+}
+
+export function isShellMcpServer(
+  server: Pick<McpServerConfig, 'displayName' | 'transport'>,
+): boolean {
+  return server.displayName === SHELL_MCP_SERVER_NAME ||
+    server.transport.nativeHost === SHELL_MCP_NATIVE_HOST;
+}
+
+export function buildShellAllowlistUpgrade(allowlist: McpToolAllowlist): McpToolAllowlist | null {
+  if (allowlist.mode !== 'allow') return null;
+
+  const names = new Set(allowlist.toolNames);
+  const missingLocalSkillTools = LOCAL_SKILL_SHELL_TOOL_NAMES.filter((name) => !names.has(name));
+  const missingLocalFileTools = LOCAL_FILE_SHELL_TOOL_NAMES.filter((name) => !names.has(name));
+  const missing = [...missingLocalSkillTools, ...missingLocalFileTools];
+  if (missing.length === 0) return null;
+
+  return {
+    mode: 'allow',
+    toolNames: [...allowlist.toolNames, ...missing],
   };
 }

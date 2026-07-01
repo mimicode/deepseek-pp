@@ -49,6 +49,11 @@ import {
 } from '../browser-control/tool';
 import { getWebToolSettings } from './web-settings';
 import type { ToolCall, ToolDescriptor, ToolExecutionTrigger, ToolResult } from './types';
+import {
+  isExternalizedToolPayload,
+  parseExternalizedToolPayload,
+  takeExternalizedToolPayloadText,
+} from './externalized-payload';
 
 export type RuntimeToolCallOptions = McpToolExecutionOptions;
 
@@ -107,9 +112,53 @@ export async function executeRuntimeToolCall(
   locale: SupportedLocale = DEFAULT_LOCALE,
   options: RuntimeToolCallOptions = {},
 ): Promise<ToolResult> {
-  const result = await executeToolCallWithoutHistory(call, locale, options);
-  await appendToolCallHistory(call, result, source);
+  const resolvedCall = await resolveToolCallPayload(call);
+  const result = await executeToolCallWithoutHistory(resolvedCall, locale, options);
+  try {
+    await appendToolCallHistory(resolvedCall, result, source);
+  } catch (error) {
+    if (!isRecoverableToolHistoryError(error)) throw error;
+    console.warn('[DeepSeek++] tool history persistence failed', error);
+  }
   return result;
+}
+
+async function resolveToolCallPayload(call: ToolCall): Promise<ToolCall> {
+  if (!isExternalizedToolPayload(call.payload)) return call;
+
+  const body = takeExternalizedToolPayloadText(call.payload.ref, call.payload.invocationName);
+  if (body === null) {
+    return {
+      ...call,
+      payload: {},
+      parseError: {
+        code: 'tool_call_external_payload_missing',
+        message: 'Tool call payload expired before execution completed. Retry the request.',
+        retryable: true,
+        details: { invocationName: call.payload.invocationName },
+      },
+    };
+  }
+
+  const resolved = parseExternalizedToolPayload(body, call.payload.invocationName);
+  if (resolved.parseError) {
+    return {
+      ...call,
+      payload: {},
+      parseError: resolved.parseError,
+    };
+  }
+
+  return {
+    ...call,
+    payload: resolved.payload ?? {},
+    parseError: undefined,
+  };
+}
+
+function isRecoverableToolHistoryError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /QUOTA_BYTES|quota exceeded|max(?:imum)?\s+(?:write|storage)|too large/i.test(message);
 }
 
 async function executeToolCallWithoutHistory(

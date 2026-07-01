@@ -556,6 +556,7 @@ export type MessageAction =
   | { type: 'ANALYZE_MULTIMODAL_MEDIA'; payload: MultimodalMediaAnalyzeRequestType }
   | { type: 'GET_TOOL_DESCRIPTORS' }
   | { type: 'REFRESH_TOOL_DESCRIPTORS' }
+  | { type: 'APPEND_EXTERNAL_TOOL_PAYLOAD_CHUNK'; payload: { callId: string; invocationName: string; chunk: string } }
   | { type: 'EXECUTE_TOOL_CALL'; payload: ToolCall }
   | { type: 'RUN_ARTIFACT_CODE'; payload: SandboxRunRequestType }
   | { type: 'GET_TOOL_CALL_HISTORY'; payload?: { limit?: number } }

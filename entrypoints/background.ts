@@ -65,6 +65,7 @@ import {
   validateStoredMemory,
 } from '../core/sync/schema';
 import { clearToolCallHistory, getToolCallHistory } from '../core/tool/history';
+import { appendExternalizedToolPayloadChunk } from '../core/tool/externalized-payload';
 import {
   executeRuntimeToolCall,
   getRuntimeToolDescriptors,
@@ -131,7 +132,11 @@ import {
 } from '../core/mcp/store';
 import { refreshMcpServerDiscovery } from '../core/mcp/discovery';
 import { getMcpOriginPattern, requestMcpServerOriginPermission } from '../core/mcp/transports';
-import { SHELL_MCP_NATIVE_HOST, SHELL_MCP_SERVER_NAME, createShellMcpPresetInput } from '../core/shell';
+import {
+  buildShellAllowlistUpgrade,
+  createShellMcpPresetInput,
+  isShellMcpServer,
+} from '../core/shell';
 import {
   MULTIMODAL_MCP_REQUEST_TIMEOUT_MS,
   canUseMultimodalMediaInput,
@@ -229,7 +234,7 @@ import {
 } from '../core/i18n/store';
 import type { WebSearchToolName } from '../core/tool/web-search';
 import type { BackgroundConfig, CurrentDeepSeekConversation, DeepSeekTheme, GitHubSkillImportRequest, GitHubSkillSource, LocalSkillImportRequest, Memory, ModelType, NewMemory, PetConfig, ProjectContextState, SavedItemInput, Skill, SkillImportSource, SyncConfig, SyncConfigDraft, SyncCounts, SystemPromptPreset, ToolCall, ToolDescriptor, ToolExecutionRecord, ToolExecutionTrigger, ToolResult, UsageTurnInput } from '../core/types';
-import type { McpServerCreateInput, McpServerUpdateInput } from '../core/mcp/types';
+import type { McpServerConfig, McpServerCreateInput, McpServerUpdateInput } from '../core/mcp/types';
 import type { AutomationCreateInput, AutomationRunnerRequest, AutomationRunnerResult, AutomationStatus, AutomationUpdateInput } from '../core/automation/types';
 import type { ConversationExportProgress, ConversationExportResult } from '../core/export/types';
 
@@ -449,15 +454,38 @@ async function openSidePanelAndSendText(text: string, tab?: chrome.tabs.Tab) {
 
 async function ensureBuiltInMcpPresets() {
   const servers = await getAllMcpServers();
-  const shellExists = servers.some((s) =>
-    s.displayName === SHELL_MCP_SERVER_NAME || s.transport.nativeHost === SHELL_MCP_NATIVE_HOST
-  );
-  if (!shellExists) {
+  const shellServer = servers.find(isShellMcpServer);
+  if (!shellServer) {
     await createMcpServer(createShellMcpPresetInput({ enabled: false }));
+  } else {
+    await ensureShellMcpCompatibility(shellServer);
   }
   const multimodalExists = servers.some(isMultimodalMcpServer);
   if (!multimodalExists) {
     await createMcpServer(createMultimodalMcpPresetInput({ enabled: false }));
+  }
+}
+
+async function ensureShellMcpCompatibility(server: McpServerConfig) {
+  let nextServer = server;
+  const upgradedAllowlist = buildShellAllowlistUpgrade(server.allowlist);
+  if (upgradedAllowlist) {
+    nextServer = await updateMcpServer(server.id, {
+      allowlist: upgradedAllowlist,
+    }) ?? server;
+  }
+
+  if (!nextServer.enabled || !nextServer.execution.enabled || nextServer.execution.mode === 'disabled') {
+    return;
+  }
+
+  const hasCache = Boolean(await getMcpToolCache(nextServer.id));
+  if (!hasCache && !upgradedAllowlist) return;
+
+  try {
+    await refreshMcpServerDiscovery(nextServer.id);
+  } catch (error) {
+    reportBackgroundStartupError('shell_mcp_discovery_refresh_failed', error);
   }
 }
 
@@ -874,6 +902,15 @@ async function handleMessage(
       await broadcastToolDescriptorsUpdate(sender.tab?.id);
       await broadcastMcpServersUpdate(sender.tab?.id);
       return tools;
+    }
+
+    case 'APPEND_EXTERNAL_TOOL_PAYLOAD_CHUNK': {
+      const payload = message.payload as { callId?: string; invocationName?: string; chunk?: string };
+      if (typeof payload.callId !== 'string' || typeof payload.invocationName !== 'string' || typeof payload.chunk !== 'string') {
+        return { ok: false, error: 'invalid_external_payload_chunk' };
+      }
+      appendExternalizedToolPayloadChunk(payload.callId, payload.invocationName, payload.chunk);
+      return { ok: true };
     }
 
     case 'EXECUTE_TOOL_CALL': {

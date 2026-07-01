@@ -15,6 +15,7 @@ import type {
   ToolCallRestoreRecord,
   ToolDescriptor,
 } from '../core/types';
+import type { ToolCallPayloadChunk } from '../core/interceptor/streaming-tool-call-parser';
 import type { SkillPopupCopy, SkillPopupItem } from '../core/ui/skill-popup';
 import { validateBridgeMessage } from '../core/messaging/schema';
 
@@ -66,6 +67,9 @@ export default defineContentScript({
       },
       onToolCall(call: ToolCall) {
         postToContent({ type: 'TOOL_CALL', data: call });
+      },
+      onToolCallChunk(chunk: ToolCallPayloadChunk) {
+        postToContent({ type: 'TOOL_CALL_CHUNK', data: chunk });
       },
       onToolCallsRestored(records: ToolCallRestoreRecord[]) {
         postToContent({ type: 'RESTORE_TOOL_CALLS', records });

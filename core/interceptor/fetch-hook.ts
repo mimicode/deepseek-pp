@@ -22,7 +22,7 @@ import {
 } from './sse-parser';
 import { createResponseTokenSpeedTracker, type ResponseTokenSpeedPayload } from './token-speed';
 import { createStreamingToolTextAccumulator } from './streaming-tool-text';
-import { createStreamingToolCallParser } from './streaming-tool-call-parser';
+import { createStreamingToolCallParser, type ToolCallPayloadChunk } from './streaming-tool-call-parser';
 import { extractToolCalls } from './tool-parser';
 
 const COMPLETION_PATH = new URL(DEEPSEEK_API_URL).pathname;
@@ -50,6 +50,7 @@ interface HookState {
   onHeadersCaptured: (headers: Record<string, string> | null) => void;
   onToolCallStarted: (call: ToolCall) => void;
   onToolCall: (call: ToolCall) => void;
+  onToolCallChunk: (chunk: ToolCallPayloadChunk) => void;
   onToolCallsRestored: (records: ToolCallRestoreRecord[]) => void;
   onResponseTokenSpeed: (progress: ResponseTokenSpeedPayload) => void;
   onResponseComplete: (complete: ResponseCompletePayload) => void;
@@ -62,6 +63,7 @@ let hookState: HookState = {
   onHeadersCaptured: () => {},
   onToolCallStarted: () => {},
   onToolCall: () => {},
+  onToolCallChunk: () => {},
   onToolCallsRestored: () => {},
   onResponseTokenSpeed: () => {},
   onResponseComplete: () => {},
@@ -357,12 +359,17 @@ function createStreamingResponseToolState(
     hookState.onToolCall(callWithSource);
   };
 
+  const emitChunk = (chunk: ToolCallPayloadChunk) => {
+    hookState.onToolCallChunk(chunk);
+  };
+
   return {
     append(text: string) {
       toolText.append(text);
       appendFallbackText(text);
       const event = toolCalls.append(text);
       event.started.forEach(emitStarted);
+      event.streamed.forEach(emitChunk);
       event.completed.forEach(emitCompleted);
     },
     finish() {

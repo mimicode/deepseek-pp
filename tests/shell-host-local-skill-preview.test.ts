@@ -47,6 +47,55 @@ describe('shell native host local_folder_pick', () => {
   });
 });
 
+describe('shell native host local_file_* tools', () => {
+  it('writes and reads large UTF-8 text without shell escaping', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'deepseek-pp-local-file-'));
+    tempRoots.push(root);
+    const filePath = join(root, 'nested/report.txt');
+    const content = `标题：生态治理\n${'段落-中文-特殊字符-{}[]<>&"\n'.repeat(4000)}`;
+
+    const writeResponse = await callNativeHost('local_file_write', {
+      path: filePath,
+      content,
+      create_directories: true,
+    });
+    expect(writeResponse.error).toBeUndefined();
+    expect(writeResponse.result?.structuredContent?.data).toMatchObject({
+      path: filePath,
+      append: false,
+    });
+
+    const statResponse = await callNativeHost('local_file_stat', { path: filePath });
+    expect(statResponse.error).toBeUndefined();
+    expect(statResponse.result?.structuredContent?.data).toMatchObject({
+      exists: true,
+      isFile: true,
+      path: filePath,
+    });
+
+    const firstRead = await callNativeHost('local_file_read', {
+      path: filePath,
+      start: 0,
+      max_chars: 1200,
+    });
+    expect(firstRead.error).toBeUndefined();
+    expect(firstRead.result?.structuredContent?.data.content).toBe(content.slice(0, 1200));
+    expect(firstRead.result?.structuredContent?.data.truncated).toBe(true);
+    expect(firstRead.result?.structuredContent?.data.nextStart).toBe(1200);
+
+    const secondRead = await callNativeHost('local_file_read', {
+      path: filePath,
+      start: firstRead.result?.structuredContent?.data.nextStart,
+      max_chars: 1200,
+    });
+    expect(secondRead.error).toBeUndefined();
+    expect(secondRead.result?.structuredContent?.data.content).toBe(content.slice(1200, 2400));
+
+    const persisted = readFileSync(filePath, 'utf8');
+    expect(persisted).toBe(content);
+  });
+});
+
 function createNestedSkillFixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'deepseek-pp-local-skill-'));
   tempRoots.push(root);

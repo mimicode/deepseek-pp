@@ -13,7 +13,7 @@ import {
   type as osType,
   version as osVersion,
 } from 'node:os';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 
 // Resolve package root from this script's location (native/ -> package root).
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -58,6 +58,9 @@ setEnvironmentPath(process.env, hostPath);
 const MCP_PROTOCOL_VERSION = '2025-06-18';
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_BYTES = 128_000;
+const MAX_LOCAL_FILE_READ_CHARS = 100_000;
+const DEFAULT_LOCAL_FILE_READ_CHARS = 16_000;
+const MAX_LOCAL_FILE_WRITE_BYTES = 2_000_000;
 const DEFAULT_PYTHON_TIMEOUT_MS = 10_000;
 const MAX_PYTHON_TIMEOUT_MS = 30_000;
 const MAX_PYTHON_CODE_BYTES = 60_000;
@@ -179,6 +182,53 @@ const TOOL_DEFINITIONS = [
       additionalProperties: false,
     },
     annotations: { operation: 'read', risk: 'low' },
+  },
+  {
+    name: 'local_file_stat',
+    title: 'Inspect Local File',
+    description: 'Return whether a local path exists, whether it is a file or directory, its size, and its last modified timestamp.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute or home-relative local path to inspect.' },
+      },
+      required: ['path'],
+      additionalProperties: false,
+    },
+    annotations: { operation: 'read', risk: 'medium' },
+  },
+  {
+    name: 'local_file_read',
+    title: 'Read Local Text File',
+    description: 'Read a UTF-8 local text file in character windows so large files can be fetched in chunks.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute or home-relative local file path to read.' },
+        start: { type: 'integer', minimum: 0, description: 'Starting character offset. Default 0.' },
+        max_chars: { type: 'integer', minimum: 1, maximum: MAX_LOCAL_FILE_READ_CHARS, description: 'Maximum characters to return. Default 16000.' },
+      },
+      required: ['path'],
+      additionalProperties: false,
+    },
+    annotations: { operation: 'read', risk: 'medium' },
+  },
+  {
+    name: 'local_file_write',
+    title: 'Write Local Text File',
+    description: 'Write UTF-8 text to a local file without shell quoting. Supports overwrite or append and can create parent directories.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute or home-relative local file path to write.' },
+        content: { type: 'string', description: 'UTF-8 text content to write exactly as provided.' },
+        append: { type: 'boolean', description: 'When true, append to the file instead of overwriting it.' },
+        create_directories: { type: 'boolean', description: 'When true, create missing parent directories. Default true.' },
+      },
+      required: ['path', 'content'],
+      additionalProperties: false,
+    },
+    annotations: { operation: 'write', risk: 'high' },
   },
   {
     name: 'shell_session_begin',
@@ -404,6 +454,18 @@ async function handleCallTool(id, params) {
     return jsonRpcResult(id, createLocalFolderPickResult(args));
   }
 
+  if (name === 'local_file_stat') {
+    return jsonRpcResult(id, createLocalFileStatResult(args));
+  }
+
+  if (name === 'local_file_read') {
+    return jsonRpcResult(id, createLocalFileReadResult(args));
+  }
+
+  if (name === 'local_file_write') {
+    return jsonRpcResult(id, createLocalFileWriteResult(args));
+  }
+
   if (name === 'shell_session_begin') {
     return jsonRpcResult(id, await beginShellSession(args));
   }
@@ -448,6 +510,147 @@ function createLocalFolderPickResult(args) {
     return {
       isError: true,
       content: [{ type: 'text', text: normalizeFolderPickerError(err) }],
+    };
+  }
+}
+
+function createLocalFileStatResult(args) {
+  const inputPath = typeof args?.path === 'string' ? args.path.trim() : '';
+  if (!inputPath) {
+    return {
+      isError: true,
+      content: [{ type: 'text', text: 'path is required and must be a non-empty string.' }],
+    };
+  }
+
+  try {
+    const resolvedPath = resolveLocalPath(inputPath);
+    const stat = safeStat(resolvedPath);
+    return {
+      content: [{ type: 'text', text: stat ? `Local path exists: ${resolvedPath}` : `Local path does not exist: ${resolvedPath}` }],
+      structuredContent: {
+        ok: true,
+        data: {
+          path: resolvedPath,
+          exists: Boolean(stat),
+          isFile: stat?.isFile() === true,
+          isDirectory: stat?.isDirectory() === true,
+          sizeBytes: stat?.size ?? 0,
+          modifiedAt: stat?.mtimeMs ?? null,
+        },
+      },
+    };
+  } catch (err) {
+    return {
+      isError: true,
+      content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
+    };
+  }
+}
+
+function createLocalFileReadResult(args) {
+  const inputPath = typeof args?.path === 'string' ? args.path.trim() : '';
+  if (!inputPath) {
+    return {
+      isError: true,
+      content: [{ type: 'text', text: 'path is required and must be a non-empty string.' }],
+    };
+  }
+
+  const start = typeof args?.start === 'number' && args.start >= 0 ? Math.floor(args.start) : 0;
+  const maxChars = typeof args?.max_chars === 'number' && args.max_chars >= 1
+    ? Math.min(Math.floor(args.max_chars), MAX_LOCAL_FILE_READ_CHARS)
+    : DEFAULT_LOCAL_FILE_READ_CHARS;
+
+  try {
+    const resolvedPath = resolveLocalPath(inputPath);
+    const stat = safeStat(resolvedPath);
+    if (!stat || !stat.isFile()) {
+      throw new Error(`Local file is not readable: ${resolvedPath}`);
+    }
+
+    const content = readTextFile(resolvedPath);
+    const slice = content.slice(start, start + maxChars);
+    const nextStart = start + slice.length;
+    const truncated = nextStart < content.length;
+
+    return {
+      content: [{ type: 'text', text: `Read ${slice.length} characters from ${resolvedPath}` }],
+      structuredContent: {
+        ok: true,
+        data: {
+          path: resolvedPath,
+          content: slice,
+          start,
+          nextStart,
+          maxChars,
+          totalChars: content.length,
+          truncated,
+        },
+      },
+    };
+  } catch (err) {
+    return {
+      isError: true,
+      content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
+    };
+  }
+}
+
+function createLocalFileWriteResult(args) {
+  const inputPath = typeof args?.path === 'string' ? args.path.trim() : '';
+  if (!inputPath) {
+    return {
+      isError: true,
+      content: [{ type: 'text', text: 'path is required and must be a non-empty string.' }],
+    };
+  }
+  if (typeof args?.content !== 'string') {
+    return {
+      isError: true,
+      content: [{ type: 'text', text: 'content is required and must be a string.' }],
+    };
+  }
+
+  try {
+    const resolvedPath = resolveLocalPath(inputPath);
+    const content = args.content;
+    const contentBytes = Buffer.byteLength(content, 'utf8');
+    if (contentBytes > MAX_LOCAL_FILE_WRITE_BYTES) {
+      throw new Error(`Content exceeds the local file write limit (${contentBytes} bytes > ${MAX_LOCAL_FILE_WRITE_BYTES}).`);
+    }
+
+    const append = args?.append === true;
+    const createDirectories = args?.create_directories !== false;
+    const parentDir = dirname(resolvedPath);
+    if (createDirectories) {
+      mkdirSync(parentDir, { recursive: true });
+    } else if (!safeStat(parentDir)?.isDirectory()) {
+      throw new Error(`Parent directory does not exist: ${parentDir}`);
+    }
+
+    writeFileSync(resolvedPath, content, {
+      encoding: 'utf8',
+      flag: append ? 'a' : 'w',
+    });
+    const stat = safeStat(resolvedPath);
+
+    return {
+      content: [{ type: 'text', text: `${append ? 'Appended' : 'Wrote'} ${contentBytes} bytes to ${resolvedPath}` }],
+      structuredContent: {
+        ok: true,
+        data: {
+          path: resolvedPath,
+          append,
+          bytesWritten: contentBytes,
+          sizeBytes: stat?.size ?? contentBytes,
+        },
+      },
+    };
+  } catch (err) {
+    return {
+      isError: true,
+      content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
     };
   }
 }

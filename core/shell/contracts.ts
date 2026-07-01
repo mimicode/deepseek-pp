@@ -5,7 +5,7 @@ export const SHELL_MCP_NATIVE_HOST = 'com.deepseek_pp.shell';
 
 export const OFFICECLI_BIN_PATH = 'officecli';
 
-export const SHELL_TOOL_NAMES = ['shell_exec', 'shell_status', 'python_status', 'python_exec', 'local_skill_preview', 'local_folder_pick', 'shell_session_begin', 'shell_session_exec', 'shell_session_end'] as const;
+export const SHELL_TOOL_NAMES = ['shell_exec', 'shell_status', 'python_status', 'python_exec', 'local_skill_preview', 'local_folder_pick', 'local_file_stat', 'local_file_read', 'local_file_write', 'shell_session_begin', 'shell_session_exec', 'shell_session_end'] as const;
 export type ShellToolName = typeof SHELL_TOOL_NAMES[number];
 
 export interface ShellToolSpec {
@@ -51,6 +51,24 @@ export const SHELL_TOOL_SPECS: readonly ShellToolSpec[] = [
     title: '选择本地文件夹',
     description: '打开系统文件夹选择器并返回用户选择的本地绝对路径。',
     risk: 'low',
+  },
+  {
+    name: 'local_file_stat',
+    title: '查看本地文件信息',
+    description: '返回本地文件是否存在、大小、类型和修改时间；不读取文件正文。',
+    risk: 'medium',
+  },
+  {
+    name: 'local_file_read',
+    title: '读取本地文本文件',
+    description: '按字符窗口读取本地 UTF-8 文本文件，支持分片读取大型文件。',
+    risk: 'medium',
+  },
+  {
+    name: 'local_file_write',
+    title: '写入本地文本文件',
+    description: '将 UTF-8 文本原样写入本地文件，支持覆盖或追加，并可自动创建父目录。',
+    risk: 'high',
   },
   {
     name: 'shell_session_begin',

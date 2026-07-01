@@ -67,7 +67,7 @@ describe('local Skill importer', () => {
     }));
   });
 
-  it('adds local Skill tools to older Shell allowlists before picking folders', async () => {
+  it('adds local file tools to older Shell allowlists before picking folders', async () => {
     vi.mocked(getAllMcpServers).mockResolvedValueOnce([createShellServer(['shell_status', 'python_status'])]);
     vi.mocked(executeMcpToolCall).mockResolvedValueOnce(createFolderPickToolResult());
 
@@ -75,7 +75,15 @@ describe('local Skill importer', () => {
     expect(updateMcpServer).toHaveBeenCalledWith('shell-local', {
       allowlist: {
         mode: 'allow',
-        toolNames: ['shell_status', 'python_status', 'local_skill_preview', 'local_folder_pick'],
+        toolNames: [
+          'shell_status',
+          'python_status',
+          'local_skill_preview',
+          'local_folder_pick',
+          'local_file_stat',
+          'local_file_read',
+          'local_file_write',
+        ],
       },
     });
   });

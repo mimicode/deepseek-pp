@@ -26,7 +26,7 @@ import {
 } from '../core/interceptor/tool-parser';
 import { augmentRequestBody } from '../core/interceptor/request-augmentation';
 import { containsInternalPromptMarker, sanitizeInternalPromptText } from '../core/prompt';
-import { createRestoredArtifactToolResult, executeArtifactToolCall, isArtifactToolName } from '../core/artifact';
+import { createRestoredArtifactToolResult } from '../core/artifact';
 import type { ResponseCompletePayload, ResponseTokenSpeedPayload } from '../core/interceptor/fetch-hook';
 import { shouldIgnoreEmptyTokenSpeedProgress } from '../core/interceptor/token-speed';
 import { runInlineAgentLoop } from '../core/inline-agent/loop';
@@ -81,6 +81,9 @@ import {
   sanitizeToolExecutionForRestoreStorage,
 } from '../core/tool/execution-restore';
 import {
+  isExternalizedToolPayloadCall,
+} from '../core/tool/externalized-payload';
+import {
   createToolRestoreBlockId,
   createToolRestoreBlockUrl,
 } from '../core/tool/restore-block';
@@ -111,6 +114,7 @@ import type {
   ConversationExportProgress,
   ConversationExportResult,
 } from '../core/export/types';
+import type { ToolCallPayloadChunk } from '../core/interceptor/streaming-tool-call-parser';
 
 const TOOL_BLOCK_ID = 'dpp-tool-block';
 const TOOL_BLOCK_STYLE_ID = 'dpp-tool-block-css';
@@ -241,6 +245,7 @@ let toolBlockEl: HTMLElement | null = null;
 let activeToolBlockSessionId: string | null = null;
 let activeStreamingToolCount = 0;
 const activeToolBlockSessions = new Map<string, ActiveToolBlockSession>();
+const pendingExternalToolPayloadWrites = new Map<string, Promise<void>>();
 let responseGeneration = 0;
 let tokenSpeedEl: HTMLElement | null = null;
 let tokenSpeedBootstrapTimer: ReturnType<typeof setTimeout> | null = null;
@@ -454,7 +459,14 @@ export default defineContentScript({
           case 'TOOL_CALL': {
             const call = data.data as ToolCall;
             setPetState('working');
+            if (isExternalizedToolPayloadCall(call) && call.id) {
+              await waitForExternalToolPayloadWrites(call.id);
+            }
             void runToolExecution(call);
+            break;
+          }
+          case 'TOOL_CALL_CHUNK': {
+            await appendExternalToolPayloadChunk(data.data as ToolCallPayloadChunk);
             break;
           }
           case 'RESTORE_TOOL_CALLS': {
@@ -4190,6 +4202,34 @@ function getToolRecordSignature(record: ToolCallRestoreRecord): string | null {
   return null;
 }
 
+async function appendExternalToolPayloadChunk(chunk: ToolCallPayloadChunk): Promise<void> {
+  const previous = pendingExternalToolPayloadWrites.get(chunk.id) ?? Promise.resolve();
+  const next = previous
+    .catch(() => undefined)
+    .then(async () => {
+      await sendRuntimeMessage({
+        type: 'APPEND_EXTERNAL_TOOL_PAYLOAD_CHUNK',
+        payload: {
+          callId: chunk.id,
+          invocationName: chunk.invocationName,
+          chunk: chunk.chunk,
+        },
+      });
+    });
+  pendingExternalToolPayloadWrites.set(chunk.id, next);
+  await next;
+}
+
+async function waitForExternalToolPayloadWrites(callId: string): Promise<void> {
+  const pending = pendingExternalToolPayloadWrites.get(callId);
+  if (!pending) return;
+  try {
+    await pending;
+  } finally {
+    pendingExternalToolPayloadWrites.delete(callId);
+  }
+}
+
 async function executeToolCall(call: ToolCall): Promise<ToolCardResult> {
   if (call.parseError) {
     return {
@@ -4198,10 +4238,6 @@ async function executeToolCall(call: ToolCall): Promise<ToolCardResult> {
       detail: call.parseError.message,
       error: call.parseError,
     };
-  }
-
-  if (isArtifactToolName(call.name)) {
-    return executeArtifactToolCall(call, currentContentLocale);
   }
 
   const result = await sendRuntimeToolCallMessage(call);
