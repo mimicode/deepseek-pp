@@ -29,7 +29,7 @@
   <a href="#功能速览">功能速览</a> ·
   <a href="#适合场景">适合场景</a> ·
   <a href="#安装">安装</a> ·
-  <a href="#107-变更回顾">1.0.7 变更</a>
+  <a href="#108-变更回顾">1.0.8 变更</a>
 </p>
 
 ## 产品定位
@@ -46,7 +46,7 @@ DeepSeek++ 是面向 [DeepSeek](https://chat.deepseek.com) 网页版的开源浏
 - [功能速览](#功能速览)
 - [适合场景](#适合场景)
 - [核心功能](#核心功能)
-- [1.0.7 变更回顾](#107-变更回顾)
+- [1.0.8 变更回顾](#108-变更回顾)
 - [安装](#安装)
 - [友情链接](#友情链接)
 
@@ -297,6 +297,24 @@ npm run shell:install -- --browser chrome --extension-id <扩展ID>
   <img src="assets/screenshot-sidepanel-automation.png" width="300" alt="自动化任务侧边栏">
 </p>
 
+## 1.0.8 变更回顾
+
+1.0.8 修复本地 Skill 导入、长内容写入配额、以及 Agent 并发三个用户反馈强烈的问题，重点让长时间任务更稳、错误提示更可操作。
+
+| 方向 | 主要变化 |
+|------|----------|
+| 本地 Skill 导入兼容中文与 BOM | 导入带 UTF-8 BOM 的 `SKILL.md` 不再丢失 frontmatter，中文名/中文目录也能导入（自动生成稳定 slug 兜底，之后可在 Skills 界面改名）；Windows 反斜杠路径正确解析。 |
+| 工具记录存储配额治理 | 工具调用历史改用预算式写入，写满前自动裁剪最旧记录，不再每次工具调用都刷配额告警；单条记录的详情/输出快照收紧，历史上限从 200 降到 100。 |
+| 本机写入大小对齐真实上限 | 本机消息和 `local_file_write` 上限对齐 Chrome native messaging 的 ~1 MB 真实天花板，过大的写入会在插件侧和本机 host 两侧都被提前拦截，并明确提示分块写入；本机 host 响应接近上限时记录诊断日志。 |
+| Agent 并发保护 | Agent 运行期间，用户在对话框发送的新消息不再触发第二个重复 Agent；旧 Agent 面板在切换时同步移除，避免两个面板同时出现；新增「Agent 正在执行中」的状态提示。 |
+| 回归覆盖 | 新增 BOM 导入、中文 slug 兜底、历史预算裁剪、本机 900 KB 边界、Agent 并发守卫相关测试。 |
+
+<details>
+<summary>展开历史版本变更回顾（1.0.7 - 0.2.0）</summary>
+
+<details>
+<summary>展开 1.0.7 变更回顾</summary>
+
 ## 1.0.7 变更回顾
 
 1.0.7 是 Shell Native Host 和 MCP stdio 桥接的诊断与稳定性更新，重点让本机工具问题更容易排查，并防止超大本机载荷导致桥接失败。
@@ -309,8 +327,7 @@ npm run shell:install -- --browser chrome --extension-id <扩展ID>
 | stdio 桥接 UI | MCP 服务表单里 stdio_bridge 的 URL 字段改名为「桥接端点 URL」并增加提示，引导本地可执行程序用户改用 Shell Native Host 预设，减少误填本地 exe 路径导致的连接失败。 |
 | 回归覆盖 | 新增 installer 日志路径往返、本机载荷大小校验、信封超限分支、通知路径、多模态回归、日志目录创建和 stderr 诊断测试。 |
 
-<details>
-<summary>展开历史版本变更回顾（1.0.6 - 0.2.0）</summary>
+</details>
 
 <details>
 <summary>展开 1.0.6 变更回顾</summary>

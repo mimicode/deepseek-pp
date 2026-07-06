@@ -101,6 +101,40 @@ describe('native messaging payload limits', () => {
     expect(connectNative).not.toHaveBeenCalled();
   });
 
+  it('rejects content just over the 900 KB cap and points users at chunked writes (issue #297)', async () => {
+    const connectNative = vi.fn();
+
+    vi.stubGlobal('chrome', {
+      runtime: {
+        connectNative,
+      },
+      storage: {
+        local: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
+      },
+    });
+
+    const server = createServer({}, 'com.deepseek_pp.shell');
+
+    const { createMcpNativeMessagingTransport } = await import('../core/mcp/transports/native');
+    await expect(createMcpNativeMessagingTransport(server).request({
+      jsonrpc: '2.0',
+      id: 'write-over-cap',
+      method: 'tools/call',
+      params: {
+        name: 'local_file_write',
+        arguments: {
+          path: '/tmp/over.txt',
+          content: 'x'.repeat(900_001),
+        },
+      },
+    })).rejects.toMatchObject({
+      code: 'mcp_native_payload_too_large',
+      retryable: false,
+    });
+
+    expect(connectNative).not.toHaveBeenCalled();
+  });
+
   it('does not size-gate multimodal native host payloads (regression for analyze_images/analyze_video)', async () => {
     vi.stubGlobal('chrome', {
       runtime: {

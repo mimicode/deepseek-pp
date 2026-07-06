@@ -34,8 +34,17 @@ interface NativePortState {
   pendingRequests: Map<number | string, PendingRequest>;
 }
 
-const MAX_NATIVE_MESSAGE_BYTES = 9 * 1024 * 1024;
-const MAX_LOCAL_FILE_WRITE_BYTES = 2_000_000;
+// Chrome native messaging enforces a ~1 MB cap per message over the Port
+// (chrome.runtime.Port / connectNative). The previous 9 MB ceiling was never
+// reachable in practice — large payloads were silently truncated or the host
+// disconnected — which surfaced as opaque "QUOTA_BYTES" failures during long
+// content writes (issue #297). Aligning here surfaces the failure early with
+// an actionable message instead.
+const MAX_NATIVE_MESSAGE_BYTES = 1 * 1024 * 1024;
+// local_file_write content cap with headroom for the JSON-RPC envelope. Keep
+// models writing in chunks: write the first section, then append the rest
+// with append=true (issue #297).
+const MAX_LOCAL_FILE_WRITE_BYTES = 900_000;
 
 const nativePortStates = new Map<string, NativePortState>();
 
@@ -183,7 +192,7 @@ function assertNativePayloadSize(nativeHost: string, envelope: McpNativeEnvelope
     if (contentBytes > MAX_LOCAL_FILE_WRITE_BYTES) {
       throw new McpTransportError(
         'mcp_native_payload_too_large',
-        `local_file_write content is too large (${contentBytes} bytes > ${MAX_LOCAL_FILE_WRITE_BYTES}). Split the file into smaller chunks or write a smaller section.`,
+        `local_file_write content is too large (${formatBytes(contentBytes)} > ${formatBytes(MAX_LOCAL_FILE_WRITE_BYTES)}). Write the file in chunks: send the first section now, then call local_file_write again with append=true for each remaining section.`,
         { retryable: false },
       );
     }
@@ -196,10 +205,16 @@ function assertNativePayloadSize(nativeHost: string, envelope: McpNativeEnvelope
   if (envelopeBytes > MAX_NATIVE_MESSAGE_BYTES) {
     throw new McpTransportError(
       'mcp_native_payload_too_large',
-      `Native MCP request is too large (${envelopeBytes} bytes > ${MAX_NATIVE_MESSAGE_BYTES}). Split the request into smaller tool calls.`,
+      `Native MCP request is too large (${formatBytes(envelopeBytes)} > ${formatBytes(MAX_NATIVE_MESSAGE_BYTES)}). Reduce the request size or split the work into smaller tool calls.`,
       { retryable: false },
     );
   }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${bytes} bytes`;
 }
 
 function getLocalFileWriteContent(message: McpJsonRpcRequest<any> | McpJsonRpcNotification): string | null {

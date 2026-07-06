@@ -29,7 +29,7 @@
   <a href="#feature-overview">Feature Overview</a> ·
   <a href="#use-cases">Use Cases</a> ·
   <a href="#installation">Installation</a> ·
-  <a href="#107-release-highlights">1.0.7 Highlights</a>
+  <a href="#108-release-highlights">1.0.8 Highlights</a>
 </p>
 
 ## Product Positioning
@@ -46,7 +46,7 @@ Language can follow the browser or be set to English or Simplified Chinese. Deep
 - [Feature Overview](#feature-overview)
 - [Use Cases](#use-cases)
 - [Core Features](#core-features)
-- [1.0.7 Release Highlights](#107-release-highlights)
+- [1.0.8 Release Highlights](#108-release-highlights)
 - [Installation](#installation)
 - [Friendly Links](#friendly-links)
 
@@ -297,6 +297,24 @@ npm run shell:install -- --browser chrome --extension-id <extension-id>
   <img src="assets/screenshot-sidepanel-automation.png" width="300" alt="Automation task side panel">
 </p>
 
+## 1.0.8 Release Highlights
+
+1.0.8 fixes three widely reported issues around local Skill import, long-content write quotas, and Agent concurrency, focusing on making long-running tasks more stable and error messages more actionable.
+
+| Area | Main changes |
+|------|--------------|
+| Local Skill import (BOM & CJK) | Importing a `SKILL.md` saved with a UTF-8 BOM no longer drops the frontmatter, so `name:` is preserved; Chinese titles or directories now import with an auto-generated stable slug that can be renamed afterwards, and Windows backslash paths resolve correctly. |
+| Tool history storage quota | Tool-call history now uses budgeted writes that proactively trim the oldest records before hitting `chrome.storage.local` quota, so each tool call no longer logs a quota warning; per-record detail/output snapshots are trimmed and the history cap is lowered from 200 to 100. |
+| Native write size aligned with real cap | Native messaging and `local_file_write` limits are aligned to Chrome's ~1 MB native messaging ceiling; oversized writes are intercepted on both the extension and native host sides with a clear "write in chunks: first section now, then append=true" prompt, and the native host logs a warning when a response approaches the cap. |
+| Agent concurrency guard | While an Agent is running, a follow-up message from the user no longer spawns a duplicate Agent task; the old Agent panel is removed synchronously on handoff to prevent two panels from appearing at once, with a new "Agent is running" status notice. |
+| Regression coverage | Adds tests for BOM import, CJK slug fallback, history budget trimming, the 900 KB native boundary, and the Agent concurrency guard. |
+
+<details>
+<summary>Show historical release highlights (1.0.7 - 0.2.0)</summary>
+
+<details>
+<summary>Show 1.0.7 release highlights</summary>
+
 ## 1.0.7 Release Highlights
 
 1.0.7 improves Shell Native Host and MCP stdio bridge diagnostics and stability, making native tool issues easier to troubleshoot and preventing oversized native payloads from breaking the bridge.
@@ -309,8 +327,7 @@ npm run shell:install -- --browser chrome --extension-id <extension-id>
 | stdio bridge UI | The stdio_bridge URL field in the MCP service form is relabeled as "Bridge endpoint URL" with a hint pointing local-executable users to the Shell Native Host preset, reducing connection failures from entering a local executable path. |
 | Regression coverage | Adds tests for installer log-path round-trip, native payload size checks, envelope-oversize branch, notification path, multimodal regression, log directory creation, and stderr diagnostics. |
 
-<details>
-<summary>Show historical release highlights (1.0.6 - 0.2.0)</summary>
+</details>
 
 <details>
 <summary>Show 1.0.6 release highlights</summary>

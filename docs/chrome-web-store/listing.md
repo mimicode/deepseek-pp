@@ -4,8 +4,8 @@ Last updated: 2026-07-03
 
 ## Package
 
-- Current version: `1.0.7`
-- Upload package: `dist/deepseek-plus-plus-1.0.7-chrome.zip`
+- Current version: `1.0.8`
+- Upload package: `dist/deepseek-plus-plus-1.0.8-chrome.zip`
 - Category: Productivity
 - Default language: English (United States)
 - Homepage URL: `https://github.com/zhu1090093659/deepseek-pp`

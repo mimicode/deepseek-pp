@@ -946,6 +946,7 @@ export const en = {
       error: 'Execution error',
       footerComplete: 'Agent complete ({steps} steps, {tools} tool calls)',
       footerError: 'Agent error ({steps} steps, {tools} tool calls)',
+      concurrencyGuard: 'An agent is still running. A duplicate task from this message was skipped. To interrupt, click Stop in the agent panel.',
     },
     permission: {
       webFetch: 'DeepSeek++ needs permission to access {origin} so it can fetch that page',

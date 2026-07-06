@@ -179,6 +179,99 @@ describe('local Skill importer', () => {
     expect(imported.instructions).not.toContain('- nested/scripts/run.py');
     expect(imported.instructions).not.toContain('### nested/references/child.md');
   });
+
+  it('imports a BOM-prefixed SKILL.md without losing the frontmatter name (issue #296)', async () => {
+    // Editors on Windows commonly save SKILL.md with a UTF-8 BOM. Previously
+    // the BOM defeated the `^---` frontmatter fence, `name:` was dropped, and
+    // the importer threw "Local Skill is missing a valid name."
+    const content = [
+      '---',
+      'name: ref-material-writing',
+      'description: BOM-safe import',
+      '---',
+      '',
+      '# 参考材料写作',
+      '',
+      'body',
+    ].join('\n');
+    vi.mocked(executeMcpToolCall).mockResolvedValueOnce({
+      ok: true,
+      summary: 'MCP tool executed',
+      output: {
+        ok: true,
+        data: {
+          rootPath: 'D:\\skills\\ref-material-writing',
+          displayName: 'ref-material-writing',
+          directoryName: 'ref-material-writing',
+          warnings: [],
+          truncated: false,
+          skills: [
+            {
+              path: 'SKILL.md',
+              directory: '',
+              directoryPath: 'D:\\skills\\ref-material-writing',
+              content: `\uFEFF${content}`,
+              bodyBytes: content.length + 1,
+              includedFiles: [],
+              omittedFiles: [],
+              scriptFiles: [],
+              warnings: [],
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await importLocalSkillSource({
+      rootPath: 'D:\\skills\\ref-material-writing',
+      selectedPaths: ['SKILL.md'],
+    });
+
+    expect(result.imported).toHaveLength(1);
+    expect(result.imported[0].name).toBe('ref-material-writing');
+  });
+
+  it('falls back to a hash slug when only a non-ASCII name is available (issue #296)', async () => {
+    // No `name:` field, Chinese H1 title, Chinese directory — every source
+    // slug is non-ASCII. The importer must not throw; it derives a stable
+    // `skill-<hash>` slug so the user can rename it later.
+    const content = ['---', 'description: 中文 only', '---', '', '# 参考材料写作', '', 'body'].join('\n');
+    vi.mocked(executeMcpToolCall).mockResolvedValueOnce({
+      ok: true,
+      summary: 'MCP tool executed',
+      output: {
+        ok: true,
+        data: {
+          rootPath: 'D:\\写作助手',
+          displayName: '写作助手',
+          directoryName: '写作助手',
+          warnings: [],
+          truncated: false,
+          skills: [
+            {
+              path: 'SKILL.md',
+              directory: '',
+              directoryPath: 'D:\\写作助手',
+              content,
+              bodyBytes: content.length,
+              includedFiles: [],
+              omittedFiles: [],
+              scriptFiles: [],
+              warnings: [],
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await importLocalSkillSource({
+      rootPath: 'D:\\写作助手',
+      selectedPaths: ['SKILL.md'],
+    });
+
+    expect(result.imported).toHaveLength(1);
+    expect(result.imported[0].name).toMatch(/^skill-[a-z0-9]{2,8}$/);
+  });
 });
 
 function createShellServer(toolNames: string[]): McpServerConfig {

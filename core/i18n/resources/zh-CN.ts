@@ -946,6 +946,7 @@ export const zhCN = {
       error: '执行出错',
       footerComplete: 'Agent 完成（{steps} 步，{tools} 次工具调用）',
       footerError: 'Agent 执行出错（{steps} 步，{tools} 次工具调用）',
+      concurrencyGuard: 'Agent 正在执行中，已忽略此消息触发的重复任务。如需中断，请点击 Agent 面板的「停止」。',
     },
     permission: {
       webFetch: 'DeepSeek++ 需要访问 {origin} 的权限以获取该页面内容',

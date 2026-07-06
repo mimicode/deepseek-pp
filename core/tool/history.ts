@@ -1,7 +1,16 @@
 import type { ToolCall, ToolCallHistoryRecord, ToolExecutionTrigger, ToolResult } from './types';
 
 const STORAGE_KEY = 'deepseek_pp_tool_history';
-const MAX_HISTORY = 200;
+// Lowered from 200 → 100. Each record carries detail/output snapshots, and the
+// full history array is rewritten on every tool call (chrome.storage.local.set
+// replaces the whole key). 200 records of untrimmed MCP output easily pushed
+// the serialized payload past chrome.storage.local's QUOTA_BYTES (10 MB),
+// which then failed on *every* subsequent write (issue #297). 100 trimmed
+// records keep the working set well under quota.
+const MAX_HISTORY = 100;
+// Reserve headroom so other storage keys (memories, skills, settings) are not
+// evicted when tool history grows. 0.75 of the per-key budget.
+const HISTORY_BUDGET_RATIO = 0.75;
 
 export async function appendToolCallHistory(
   call: ToolCall,
@@ -16,8 +25,10 @@ export async function appendToolCallHistory(
     createdAt: Date.now(),
   };
   const history = await getToolCallHistory();
+  const budgetBytes = getHistoryBudgetBytes();
+  const trimmed = trimToFit([record, ...history], budgetBytes);
   await chrome.storage.local.set({
-    [STORAGE_KEY]: [record, ...history].slice(0, MAX_HISTORY),
+    [STORAGE_KEY]: trimmed.slice(0, MAX_HISTORY),
   });
   return record;
 }
@@ -39,21 +50,21 @@ export async function clearToolCallHistory(): Promise<void> {
 function sanitizeCall(call: ToolCall): ToolCall {
   return {
     ...call,
-    payload: truncateRecord(call.payload, 8_000),
-    raw: call.raw.length > 8_000 ? `${call.raw.slice(0, 8_000)}\n...[truncated]` : call.raw,
+    payload: truncateRecord(call.payload, 4_000),
+    raw: call.raw.length > 4_000 ? `${call.raw.slice(0, 4_000)}\n...[truncated]` : call.raw,
   };
 }
 
 function sanitizeResult(result: ToolResult): ToolResult {
   return {
     ...result,
-    detail: truncateString(result.detail, 8_000),
-    output: result.output === undefined ? undefined : truncateString(JSON.stringify(result.output), 16_000),
+    detail: truncateString(result.detail, 4_000),
+    output: result.output === undefined ? undefined : truncateString(JSON.stringify(result.output), 8_000),
     error: result.error
       ? {
         ...result.error,
-        message: truncateString(result.error.message, 4_000) ?? '',
-        details: result.error.details ? truncateRecord(result.error.details, 4_000) : undefined,
+        message: truncateString(result.error.message, 2_000) ?? '',
+        details: result.error.details ? truncateRecord(result.error.details, 2_000) : undefined,
       }
       : undefined,
   };
@@ -68,4 +79,28 @@ function truncateRecord(value: Record<string, unknown>, maxLength: number): Reco
 function truncateString(value: string | undefined, maxLength: number): string | undefined {
   if (!value || value.length <= maxLength) return value;
   return `${value.slice(0, maxLength)}\n...[truncated]`;
+}
+
+/**
+ * Drop the oldest records until the serialized history fits within the budget.
+ * Prevents the chrome.storage.local.set() call from throwing QUOTA_BYTES on
+ * every tool call once the key fills up (issue #297). The newest record is
+ * always retained so the current execution is never lost.
+ */
+function trimToFit(records: ToolCallHistoryRecord[], budgetBytes: number): ToolCallHistoryRecord[] {
+  let candidate = records;
+  while (candidate.length > 1) {
+    const serialized = JSON.stringify(candidate);
+    if (new Blob([serialized]).size <= budgetBytes) return candidate;
+    // Drop oldest (highest index after we prepended the newest at index 0).
+    candidate = candidate.slice(0, -1);
+  }
+  return candidate;
+}
+
+function getHistoryBudgetBytes(): number {
+  // chrome.storage.local.QUOTA_BYTES is 10 MB (10,485,760) for unpacked/packed
+  // extensions; fall back to that constant if the runtime does not expose it.
+  const quota = (chrome.storage.local.QUOTA_BYTES as number | undefined) ?? 10_485_760;
+  return Math.floor(quota * HISTORY_BUDGET_RATIO);
 }

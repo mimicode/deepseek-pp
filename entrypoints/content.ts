@@ -132,6 +132,8 @@ const MULTIMODAL_MEDIA_STYLE_ID = 'dpp-multimodal-media-css';
 const EXPORT_ACTION_CLASS = 'dpp-export-action';
 const EXPORT_ACTION_STYLE_ID = 'dpp-export-action-css';
 const EXPORT_ACTION_TOAST_CLASS = 'dpp-export-toast';
+const CONTENT_TOAST_CLASS = 'dpp-content-toast';
+const CONTENT_TOAST_STYLE_ID = 'dpp-content-toast-css';
 const EXPORT_ACTION_MENU_CLASS = 'dpp-export-menu';
 const DEEPSEEK_ACTION_CONTROL_SELECTOR = 'button, [role="button"].ds-button';
 const EXPORT_ACTION_MOUNT_DEBOUNCE_MS = 250;
@@ -2297,6 +2299,68 @@ function showConversationExportToast(message: string, tone: 'info' | 'success' |
   }, EXPORT_ACTION_TOAST_VISIBLE_MS);
 }
 
+let contentToastTimer: ReturnType<typeof setTimeout> | null = null;
+const CONTENT_TOAST_VISIBLE_MS = 6000;
+
+/**
+ * Generic status toast for content-script-initiated notices (e.g. the inline
+ * agent concurrency guard in issue #298). Distinct from the export toast so
+ * the two never overwrite each other.
+ */
+function showContentToast(message: string, tone: 'info' | 'warning' = 'info'): void {
+  injectContentToastStyles();
+  let toast = document.querySelector<HTMLElement>(`.${CONTENT_TOAST_CLASS}`);
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.className = CONTENT_TOAST_CLASS;
+    toast.setAttribute('role', 'status');
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.dataset.tone = tone;
+  toast.dataset.visible = 'true';
+  if (contentToastTimer) clearTimeout(contentToastTimer);
+  contentToastTimer = setTimeout(() => {
+    contentToastTimer = null;
+    toast!.dataset.visible = 'false';
+  }, CONTENT_TOAST_VISIBLE_MS);
+}
+
+function injectContentToastStyles(): void {
+  if (document.getElementById(CONTENT_TOAST_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = CONTENT_TOAST_STYLE_ID;
+  style.textContent = `
+    .${CONTENT_TOAST_CLASS} {
+      position: fixed;
+      left: 50%;
+      bottom: 88px;
+      transform: translate(-50%, 12px);
+      transform-origin: center bottom;
+      max-width: min(520px, calc(100vw - 32px));
+      padding: 10px 16px;
+      border-radius: 10px;
+      background: rgba(30, 32, 40, 0.95);
+      color: #fff;
+      font-size: 13px;
+      line-height: 1.45;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+      z-index: 2147483646;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
+    .${CONTENT_TOAST_CLASS}[data-visible="true"] {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+    .${CONTENT_TOAST_CLASS}[data-tone="warning"] {
+      background: rgba(180, 110, 0, 0.96);
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 function isVisibleElement(el: HTMLElement): boolean {
   const rect = el.getBoundingClientRect();
   const style = getComputedStyle(el);
@@ -2804,6 +2868,21 @@ function startInlineAgentIfNeeded(
 ): void {
   if (isInlineAgentResponseComplete(complete)) return;
 
+  // Concurrency guard (issue #298): if an inline agent loop is already running
+  // for this conversation, do NOT start a second one off a user-initiated turn
+  // (e.g. a "continue" prompt because the long-running agent looked stuck).
+  // Starting a second loop previously left two agent panels racing in the DOM.
+  // Continuation turns are produced by the agent loop itself and are already
+  // handled by isInlineAgentResponseComplete above.
+  if (isInlineAgentRunning()) {
+    showContentToast(
+      contentT('content.agent.concurrencyGuard'),
+      'warning',
+    );
+    return;
+  }
+
+
   // Collect executions that should trigger a continuation:
   // MCP tools + local web and browser-control tools.
   const continuableExecutions = executions.filter(
@@ -2912,14 +2991,48 @@ function findInlineAgentLiveTarget(
   return messages[messages.length - 1] ?? null;
 }
 
+/**
+ * True when an inline agent loop is mid-flight (an AbortController exists and
+ * has not been aborted). Used by the concurrency guard in
+ * {@link startInlineAgentIfNeeded} to skip launching a duplicate loop when the
+ * user sends a follow-up message while a previous agent is still running
+ * (issue #298).
+ */
+function isInlineAgentRunning(): boolean {
+  const controller = activeAgentAbort;
+  return controller !== null && !controller.signal.aborted;
+}
+
+/**
+ * Synchronously detach the current agent panel and reset the module-level
+ * bookkeeping. Does NOT abort the loop (the caller owns that) and does NOT
+ * render a footer — used when a new loop supersedes an in-flight one so the
+ * old panel disappears immediately instead of lingering until the aborted
+ * stream settles (issue #298).
+ */
+function teardownInlineAgentPanel(): void {
+  flushPendingInlineAgentStreamRender();
+  if (inlineAgentContainer) {
+    inlineAgentContainer.remove();
+  }
+  inlineAgentLoopId = null;
+  inlineAgentContainer = null;
+  inlineAgentCurrentStep = null;
+  activeInlineAgentTrace = null;
+  inlineAgentContainerObserver?.disconnect();
+  inlineAgentContainerObserver = null;
+}
+
 function stopInlineAgent(): void {
   const container = inlineAgentContainer;
-  flushPendingInlineAgentStreamRender();
   updateActiveInlineAgentTrace((trace) => ({
     ...trace,
     status: 'stopping',
     error: contentT('content.agent.stopped'),
   }), { immediate: true });
+  // Reset module state (DOM bookkeeping + observers). The container itself is
+  // retained momentarily to append the "stopped" footer, then detached.
+  flushPendingInlineAgentStreamRender();
   inlineAgentLoopId = null;
   inlineAgentContainer = null;
   inlineAgentCurrentStep = null;
@@ -2935,7 +3048,14 @@ function stopInlineAgent(): void {
 }
 
 async function startInlineAgentLoop(payload: InlineAgentStartPayload): Promise<void> {
-  activeAgentAbort?.abort();
+  // Abort any previously running loop AND tear down its panel synchronously
+  // before mounting the new one. Previously the old panel stayed in the DOM
+  // until the aborted stream settled, so two agent panels briefly raced
+  // (issue #298).
+  if (activeAgentAbort) {
+    activeAgentAbort.abort();
+    teardownInlineAgentPanel();
+  }
   const abort = new AbortController();
   activeAgentAbort = abort;
 

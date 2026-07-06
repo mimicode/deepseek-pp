@@ -58,9 +58,16 @@ setEnvironmentPath(process.env, hostPath);
 const MCP_PROTOCOL_VERSION = '2025-06-18';
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_BYTES = 128_000;
+// Chrome native messaging caps a single Port message at ~1 MB. The host must
+// respect the same ceiling in both directions or Chrome truncates/disconnects
+// and the user sees opaque "QUOTA_BYTES" failures (issue #297).
+const MAX_NATIVE_MESSAGE_BYTES = 1 * 1024 * 1024;
+// Headroom under MAX_NATIVE_MESSAGE_BYTES for the JSON-RPC envelope wrapping
+// the file content. Aligned with the extension-side cap so a request that
+// passes one side is never rejected by the other.
+const MAX_LOCAL_FILE_WRITE_BYTES = 900_000;
 const MAX_LOCAL_FILE_READ_CHARS = 100_000;
 const DEFAULT_LOCAL_FILE_READ_CHARS = 16_000;
-const MAX_LOCAL_FILE_WRITE_BYTES = 2_000_000;
 const DEFAULT_PYTHON_TIMEOUT_MS = 10_000;
 const MAX_PYTHON_TIMEOUT_MS = 30_000;
 const MAX_PYTHON_CODE_BYTES = 60_000;
@@ -316,6 +323,12 @@ function logLine(message) {
   }
 }
 
+function formatBytes(bytes) {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${bytes} bytes`;
+}
+
 // --- Native messaging framing (4-byte LE length prefix) ---
 
 let buffer = Buffer.alloc(0);
@@ -331,8 +344,8 @@ function drainBuffer() {
   while (true) {
     if (buffer.length < 4) return;
     const len = buffer.readUInt32LE(0);
-    if (len === 0 || len > 10 * 1024 * 1024) {
-      logLine(`Invalid message length: ${len}`);
+    if (len === 0 || len > MAX_NATIVE_MESSAGE_BYTES) {
+      logLine(`Invalid message length: ${len} (max ${MAX_NATIVE_MESSAGE_BYTES}). The extension should chunk requests; see issue #297.`);
       process.exit(1);
     }
     if (buffer.length < 4 + len) return;
@@ -384,6 +397,12 @@ function writeNativeMessage(message) {
   return new Promise((resolve) => {
     const json = JSON.stringify(message);
     const body = Buffer.from(json, 'utf8');
+    // Chrome truncates or drops native messaging messages above ~1 MB. Log a
+    // diagnostic when a response approaches that ceiling so users hitting
+    // "QUOTA_BYTES" can correlate it to a specific tool result (issue #297).
+    if (body.length > Math.floor(MAX_NATIVE_MESSAGE_BYTES * 0.95)) {
+      logLine(`writeNativeMessage WARNING body=${body.length} bytes approaches the ${MAX_NATIVE_MESSAGE_BYTES} native messaging cap; Chrome may truncate this response.`);
+    }
     const header = Buffer.alloc(4);
     header.writeUInt32LE(body.length, 0);
     process.stdout.write(header);
@@ -663,7 +682,9 @@ function createLocalFileWriteResult(args) {
     const contentBytes = Buffer.byteLength(content, 'utf8');
     if (contentBytes > MAX_LOCAL_FILE_WRITE_BYTES) {
       logLine(`local_file_write REJECTED path=${resolvedPath} contentBytes=${contentBytes} limit=${MAX_LOCAL_FILE_WRITE_BYTES}`);
-      throw new Error(`Content exceeds the local file write limit (${contentBytes} bytes > ${MAX_LOCAL_FILE_WRITE_BYTES}).`);
+      throw new Error(
+        `Content exceeds the local file write limit (${formatBytes(contentBytes)} > ${formatBytes(MAX_LOCAL_FILE_WRITE_BYTES)}). Write the file in chunks: send the first section now, then call local_file_write again with append=true for each remaining section.`,
+      );
     }
 
     const append = args?.append === true;

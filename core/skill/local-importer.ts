@@ -504,16 +504,31 @@ function relativeToSkillDirectory(path: string, directory: string): string {
 }
 
 function parseSkillDoc(raw: string, path: string): ParsedSkillDoc {
-  const frontmatter = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  // Strip a leading UTF-8/UTF-16 BOM so the `^---` frontmatter fence still
+  // matches. Editors on Windows (notably Notepad/VS Code with BOM presets)
+  // commonly save SKILL.md with a BOM, which previously made the frontmatter
+  // regex miss and dropped `name:` along with it (issue #296).
+  const bomStripped = raw.replace(/^\uFEFF/, '');
+  const frontmatter = bomStripped.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   const meta = frontmatter ? parseYamlSubset(frontmatter[1]) : {};
-  const body = frontmatter ? raw.slice(frontmatter[0].length).trim() : raw.trim();
-  const name = normalizeSkillName(readString(meta, 'name') ?? parentDirectory(path).split('/').pop() ?? path.replace(/\/?SKILL\.md$/, ''));
+  const body = frontmatter ? bomStripped.slice(frontmatter[0].length).trim() : bomStripped.trim();
+  const name = normalizeSkillName(
+    readString(meta, 'name')
+    ?? extractH1Title(body)
+    ?? parentDirectory(path).split('/').pop()
+    ?? path.replace(/\/?SKILL\.md$/i, ''),
+  );
   const description = readString(meta, 'description') ?? firstParagraph(body) ?? `Imported local Skill from ${path}`;
   const metadata = readObject(meta, 'metadata');
   const version = readString(metadata, 'version') ?? readString(meta, 'version');
   const lastUpdated = readString(metadata, 'last_updated') ?? readString(metadata, 'lastUpdated') ?? readString(meta, 'last_updated');
 
   return { name, description, body, version, lastUpdated };
+}
+
+function extractH1Title(body: string): string | undefined {
+  const match = body.match(/^\s*#\s+(.+?)\s*$/m);
+  return match ? match[1] : undefined;
 }
 
 function parseYamlSubset(raw: string): Record<string, unknown> {
@@ -599,15 +614,30 @@ function createLocalSourceId(rootPath: string): string {
 }
 
 function parentDirectory(path: string): string {
-  const parts = path.split('/');
+  // Normalize Windows backslashes so D:\foo\bar\SKILL.md resolves correctly.
+  const normalized = path.replace(/\\/g, '/');
+  const parts = normalized.split('/');
   parts.pop();
   return parts.join('/');
 }
 
 function normalizeSkillName(name: string): string {
   const normalized = name.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-  if (!normalized) throw new Error('Local Skill is missing a valid name.');
+  // Slug collision with non-ASCII names (Chinese titles, etc.) used to throw a
+  // hard error and block local Skill import entirely (issue #296). Fall back to
+  // a stable hash-derived slug so the import always succeeds; the user can
+  // rename it from the Skills UI afterwards.
+  if (!normalized) return `skill-${shortHash(name || 'unnamed')}`;
   return normalized;
+}
+
+function shortHash(input: string): string {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash << 5) - hash + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36).slice(0, 8).padStart(2, '0');
 }
 
 function createUniqueSkillName(preferred: string, occupiedNames: Set<string>): string {
