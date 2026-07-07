@@ -177,6 +177,18 @@ export default function AppearanceSubPage({ state }: { state: SettingsState }) {
           onToggle={state.handlePetMotionToggle}
         />
       </SettingsSection>
+
+      <SettingsSection
+        title={t('sidepanel.settings.floatingChatSection')}
+        description={t('sidepanel.settings.floatingChatDescription')}
+      >
+        <ToggleRow
+          title={t('sidepanel.settings.floatingChat')}
+          description={t('sidepanel.settings.floatingChatDescription')}
+          enabled={state.floatingChatEnabled ?? true}
+          onToggle={state.handleFloatingChatToggle}
+        />
+      </SettingsSection>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import {
   normalizeBackgroundConfig,
 } from '../../../../core/background/config';
 import { getChatEnabled, setChatEnabled } from '../../../../core/chat/store';
+import { getFloatingChatEnabled, setFloatingChatEnabled } from '../../../../core/floating-chat/store';
 import {
   DEFAULT_PET_CONFIG,
   clampPetOpacity,
@@ -118,6 +119,9 @@ export function useSettingsState() {
   const [version, setVersion] = useState('');
   const [modelType, setModelTypeState] = useState<ModelType>(null);
   const [chatEnabled, setChatEnabledState] = useState(false);
+  // null = not yet loaded; the settings page only renders this sub-page after
+  // loading completes, so the toggle never shows a stale default.
+  const [floatingChatEnabled, setFloatingChatEnabledState] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
 
   // --- deepseek api key ---
@@ -193,10 +197,14 @@ export function useSettingsState() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [chatOn, keyStatus, mmStatus, memories, cfg, syncCfg, modelType, bgCfg, petCfg] = await Promise.all([
+      const [chatOn, floatingOn, keyStatus, mmStatus, memories, cfg, syncCfg, modelType, bgCfg, petCfg] = await Promise.all([
         getChatEnabled().catch((error) => {
           console.error('DeepSeek++ failed to read sidepanel chat setting', error);
           return false;
+        }),
+        getFloatingChatEnabled().catch((error) => {
+          console.error('DeepSeek++ failed to read floating-chat setting', error);
+          return true;
         }),
         chrome.runtime.sendMessage({ type: 'GET_DEEPSEEK_API_KEY_STATUS' }).catch(() => undefined),
         chrome.runtime.sendMessage({ type: 'GET_MULTIMODAL_SETTINGS_STATUS' }).catch(() => undefined),
@@ -209,6 +217,7 @@ export function useSettingsState() {
       ]);
       if (cancelled) return;
       setChatEnabledState(chatOn);
+      setFloatingChatEnabledState(floatingOn);
       setApiKeyConfigured((keyStatus as { configured?: boolean } | undefined)?.configured === true);
       const mm = mmStatus as ({ ok?: boolean } & MultimodalSettingsStatus) | undefined;
       if (mm?.ok) syncMultimodalStatus(mm);
@@ -247,6 +256,12 @@ export function useSettingsState() {
   const handleChatToggle = useCallback(async (next: boolean) => {
     setChatEnabledState(next);
     await setChatEnabled(next);
+  }, []);
+
+  // --- global floating chat ---
+  const handleFloatingChatToggle = useCallback(async (next: boolean) => {
+    setFloatingChatEnabledState(next);
+    await setFloatingChatEnabled(next);
   }, []);
 
   // --- deepseek api key ---
@@ -736,6 +751,8 @@ export function useSettingsState() {
     chatEnabled,
     handleModelTypeChange,
     handleChatToggle,
+    floatingChatEnabled,
+    handleFloatingChatToggle,
     // deepseek api key
     apiKeyConfigured,
     apiKeyInput,

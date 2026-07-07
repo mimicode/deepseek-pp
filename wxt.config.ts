@@ -81,10 +81,20 @@ function createManifest(env: ConfigEnv): UserManifest {
     sandbox: {
       pages: ['sandbox-runner.html'],
     },
-    web_accessible_resources: [{
-      resources: ['pet/*.png', 'deepseek/*.wasm'],
-      matches: ['*://chat.deepseek.com/*'],
-    }],
+    web_accessible_resources: [
+      // Pet sprites + DeepSeek WASM stay scoped to the DeepSeek host.
+      {
+        resources: ['pet/*.png', 'deepseek/*.wasm'],
+        matches: ['*://chat.deepseek.com/*'],
+      },
+      // sidepanel.html must be web-accessible on every host because the global
+      // floating-chat ball embeds it in an iframe from any page. The whale
+      // sprite is bundled with the button itself.
+      {
+        resources: ['sidepanel.html', 'pet/deepseek-whale-pet-states.png'],
+        matches: ['<all_urls>'],
+      },
+    ],
     ...(isChromiumTarget ? {
       action: {
         default_title: MANIFEST_ACTION_TITLE,

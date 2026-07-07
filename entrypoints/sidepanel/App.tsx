@@ -24,6 +24,10 @@ const TABS: { key: Tab; labelKey: LocaleMessageKey; icon: string }[] = [
 
 export default function App() {
   const { t } = useI18n();
+  // Floating-chat surface: when the sidepanel is loaded inside the global
+  // floating ball's iframe, drop the nav/whats-new chrome and render chat only.
+  const isFloatingChat = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('surface') === 'floating-chat';
   const [tab, setTab] = useState<Tab>('chat');
   const [chatEnabled, setChatEnabledState] = useState<boolean | null>(null);
 
@@ -69,46 +73,48 @@ export default function App() {
   }, []);
 
   return (
-    <div className="ds-app-shell">
-      <nav className="side-tabs" aria-label={t('app.sideNavLabel')}>
-        {TABS.filter((tabConfig) =>
-          chatEnabled !== false || tabConfig.key !== 'chat'
-        ).map((tabConfig) => {
-          const label = t(tabConfig.labelKey);
-          return (
-            <button
-              key={tabConfig.key}
-              type="button"
-              onClick={() => setTab(tabConfig.key)}
-              className={`side-tab${tab === tabConfig.key ? ' side-tab-active' : ''}`}
-              aria-current={tab === tabConfig.key ? 'page' : undefined}
-              title={label}
-            >
-              <svg
-                className="side-tab-icon"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-                aria-hidden="true"
+    <div className={isFloatingChat ? 'ds-app-shell ds-app-shell-floating-chat' : 'ds-app-shell'}>
+      {!isFloatingChat && (
+        <nav className="side-tabs" aria-label={t('app.sideNavLabel')}>
+          {TABS.filter((tabConfig) =>
+            chatEnabled !== false || tabConfig.key !== 'chat'
+          ).map((tabConfig) => {
+            const label = t(tabConfig.labelKey);
+            return (
+              <button
+                key={tabConfig.key}
+                type="button"
+                onClick={() => setTab(tabConfig.key)}
+                className={`side-tab${tab === tabConfig.key ? ' side-tab-active' : ''}`}
+                aria-current={tab === tabConfig.key ? 'page' : undefined}
+                title={label}
               >
-                <path strokeLinecap="round" strokeLinejoin="round" d={tabConfig.icon} />
-              </svg>
-              <span className="side-tab-label">{label}</span>
-              {tab === tabConfig.key && <span className="side-tab-indicator" />}
-            </button>
-          );
-        })}
-      </nav>
+                <svg
+                  className="side-tab-icon"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  aria-hidden="true"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d={tabConfig.icon} />
+                </svg>
+                <span className="side-tab-label">{label}</span>
+                {tab === tabConfig.key && <span className="side-tab-indicator" />}
+              </button>
+            );
+          })}
+        </nav>
+      )}
 
       <main className="ds-app-main">
-        <WhatsNewPanel />
+        {!isFloatingChat && <WhatsNewPanel />}
         <Suspense fallback={<div className="p-4"><SkeletonList rows={3} /></div>}>
-          {tab === 'chat' && <ChatPage />}
-          {tab === 'library' && <LibraryPage />}
-          {tab === 'projects' && <ProjectsPage />}
-          {tab === 'capabilities' && <CapabilitiesPage />}
-          {tab === 'settings' && <SettingsPage />}
+          {(isFloatingChat || tab === 'chat') && <ChatPage />}
+          {!isFloatingChat && tab === 'library' && <LibraryPage />}
+          {!isFloatingChat && tab === 'projects' && <ProjectsPage />}
+          {!isFloatingChat && tab === 'capabilities' && <CapabilitiesPage />}
+          {!isFloatingChat && tab === 'settings' && <SettingsPage />}
         </Suspense>
       </main>
     </div>

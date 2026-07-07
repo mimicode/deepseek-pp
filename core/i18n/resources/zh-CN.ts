@@ -412,6 +412,9 @@ export const zhCN = {
       opacity: '透明度',
       petMotion: '动态漂浮',
       petMotionDescription: '减少动作时可关闭',
+      floatingChatSection: '全局悬浮球',
+      floatingChat: '悬浮聊天球',
+      floatingChatDescription: '在所有网页显示可拖动的悬浮球。点击打开聊天窗口，长按拖动位置。',
       cloudSyncSection: '云同步',
       syncProvider: '同步方式',
       providerWebdav: 'WebDAV',
@@ -1259,6 +1262,18 @@ The tag name MUST exactly match one of the available tool names.
 If a tool is listed in Available Tools, it is connected through the extension and you can call it by emitting the XML tag. Do NOT say you cannot call listed MCP tools.
 Never output pseudo tool-call JSON such as {"tool":"name","arguments":{...}} in a Markdown code block. That is explanation text, not an executable call.
 Never place executable tool XML in a thinking/reasoning section. Put tool XML in the final assistant answer content so the extension can execute it.
+
+### Extended Capabilities
+
+If the Available Tools list below includes any of these capabilities, you may proactively use them to complete the user's task without asking for permission first — the user has opted in by enabling them:
+
+- Local command execution (running CLI tools, scripts, file operations on the user's machine)
+- Browser control (opening pages, clicking, typing, reading page snapshots)
+- Web search and web fetch (real-time information, news, documentation)
+- Office document processing (.docx / .xlsx / .pptx)
+- Long-term memory (saving durable user context via memory_save)
+
+Only treat a capability as available when its concrete tool actually appears in the Available Tools list. Do not claim or exercise a capability whose tool is not listed, and do not invent tool names or results. Prefer the tools that are already connected; only request the user to enable a capability when the task clearly needs it and the tool is absent.
 
 ### Available Tools
 
